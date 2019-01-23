@@ -165,7 +165,9 @@ func NewSingleHandlerRouter(h MessageHandler) *SingleHandlerRouter {
 
 // RegisterHandler is the library provided SingleHandlerRouter's
 // implementation of the required interface function()
-func (s *SingleHandlerRouter) RegisterHandler(topic string, h MessageHandler) {}
+func (s *SingleHandlerRouter) RegisterHandler(topic string, h MessageHandler) {
+	s.handler = h
+}
 
 // UnregisterHandler is the library provided SingleHandlerRouter's
 // implementation of the required interface function()
