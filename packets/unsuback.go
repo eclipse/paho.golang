@@ -32,9 +32,11 @@ func (u *Unsuback) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = u.Properties.Unpack(r, UNSUBACK)
-	if err != nil {
-		return err
+	if r.Len() > 2 {
+		err = u.Properties.Unpack(r, UNSUBACK)
+		if err != nil {
+			return err
+		}
 	}
 
 	u.Reasons = r.Bytes()
