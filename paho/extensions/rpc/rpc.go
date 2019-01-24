@@ -9,7 +9,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-// Handler is the struct providing a request/reponse functionality for the paho
+// Handler is the struct providing a request/response functionality for the paho
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
@@ -23,11 +23,11 @@ func NewHandler(c *paho.Client) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/reponses", c.ClientID), h.responseHandler)
+	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
 
 	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/reponses", c.ClientID): paho.SubscribeOptions{QoS: 1},
+			fmt.Sprintf("%s/responses", c.ClientID): paho.SubscribeOptions{QoS: 1},
 		},
 	})
 	if err != nil {
@@ -65,7 +65,7 @@ func (h *Handler) Request(pb *paho.Publish) (*paho.Publish, error) {
 	}
 
 	pb.Properties.CorrelationData = []byte(cID)
-	pb.Properties.ResponseTopic = fmt.Sprintf("%s/reponses", h.c.ClientID)
+	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
 	pb.Retain = false
 
 	_, err := h.c.Publish(context.Background(), pb)

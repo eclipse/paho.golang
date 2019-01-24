@@ -30,7 +30,7 @@ type MIDService interface {
 
 // CPContext is the struct that is used to return responses to
 // ControlPackets that have them, eg: the suback to a subscribe.
-// The reponse packet is send down the Return channel and the
+// The response packet is send down the Return channel and the
 // Context is used to track timeouts.
 type CPContext struct {
 	Return  chan packets.ControlPacket
