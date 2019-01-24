@@ -341,6 +341,7 @@ func (c *Client) Error(e error) {
 	default:
 		close(c.stop)
 	}
+	c.PingHandler.Stop()
 	c.Conn.Close()
 	c.Unlock()
 }
@@ -389,7 +390,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 
 // Subscribe is used to send a Subscription request to the MQTT server.
 // It is passed a pre-prepared Subscribe packet and blocks waiting for
-// a response Suback, or for the timeout to fire. Any reponse Suback
+// a response Suback, or for the timeout to fire. Any response Suback
 // is returned from the function, along with any errors.
 func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	if !c.serverProps.WildcardSubAvailable {
@@ -466,7 +467,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 // Unsubscribe is used to send an Unsubscribe request to the MQTT server.
 // It is passed a pre-prepared Unsubscribe packet and blocks waiting for
-// a response Unsuback, or for the timeout to fire. Any reponse Unsuback
+// a response Unsuback, or for the timeout to fire. Any response Unsuback
 // is returned from the function, along with any errors.
 func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, error) {
 	debug.Printf("Unsubscribing from %+v", u.Topics)
@@ -524,7 +525,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 // Publish is used to send a publication to the MQTT server.
 // It is passed a pre-prepared Publish packet and blocks waiting for
 // the appropriate response, or for the timeout to fire.
-// Any reponse message is returned from the function, along with any errors.
+// Any response message is returned from the function, along with any errors.
 func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, error) {
 	if p.QoS > c.serverProps.MaximumQoS {
 		return nil, fmt.Errorf("Cannot send Publish with QoS %d, server maximum QoS is %d", p.QoS, c.serverProps.MaximumQoS)
