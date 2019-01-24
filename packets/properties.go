@@ -163,7 +163,7 @@ func (i *Properties) Pack(p PacketType) []byte {
 
 		if i.CorrelationData != nil && len(i.CorrelationData) > 0 {
 			b.WriteByte(PropCorrelationData)
-			b.Write(i.CorrelationData)
+			writeBinary(i.CorrelationData, &b)
 		}
 
 		if i.TopicAlias != nil {
@@ -270,7 +270,7 @@ func (i *Properties) Pack(p PacketType) []byte {
 
 		if i.AuthData != nil && len(i.AuthData) > 0 {
 			b.WriteByte(PropAuthData)
-			b.Write(i.AuthData)
+			writeBinary(i.AuthData, &b)
 		}
 	}
 
