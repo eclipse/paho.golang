@@ -8,9 +8,9 @@ import (
 
 // Pubrel is the Variable Header definition for a Pubrel control packet
 type Pubrel struct {
+	Properties *Properties
 	PacketID   uint16
 	ReasonCode byte
-	Properties *Properties
 }
 
 //Unpack is the implementation of the interface required function for a packet

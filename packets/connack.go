@@ -8,9 +8,9 @@ import (
 
 // Connack is the Variable Header definition for a connack control packet
 type Connack struct {
-	SessionPresent bool
-	ReasonCode     byte
 	Properties     *Properties
+	ReasonCode     byte
+	SessionPresent bool
 }
 
 //Unpack is the implementation of the interface required function for a packet

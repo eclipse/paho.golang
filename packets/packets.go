@@ -42,15 +42,15 @@ type (
 
 	// FixedHeader is the definition of a control packet fixed header
 	FixedHeader struct {
-		Flags           byte
-		Type            PacketType
 		remainingLength int
+		Type            PacketType
+		Flags           byte
 	}
 
 	// ControlPacket is the definition of a control packet
 	ControlPacket struct {
-		FixedHeader
 		Content Packet
+		FixedHeader
 	}
 )
 
@@ -154,7 +154,7 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 	}
 	cp := NewControlPacket(PacketType(t[0] >> 4))
 	if cp == nil {
-		return nil, fmt.Errorf("Invalid packet type requested, %d", t[0]>>4)
+		return nil, fmt.Errorf("invalid packet type requested, %d", t[0]>>4)
 	}
 	cp.Flags = t[0] & 0xF
 	if cp.Type == PUBLISH {
@@ -177,7 +177,7 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 		return nil, err
 	}
 	if n != int64(cp.remainingLength) {
-		return nil, fmt.Errorf("Failed to read packet, expected %d bytes, read %d", cp.remainingLength, n)
+		return nil, fmt.Errorf("failed to read packet, expected %d bytes, read %d", cp.remainingLength, n)
 	}
 	err = cp.Content.Unpack(&content)
 	if err != nil {

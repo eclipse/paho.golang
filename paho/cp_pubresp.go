@@ -6,8 +6,8 @@ type (
 	// PublishResponse is a generic representation of a response
 	// to a QoS1 or QoS2 Publish
 	PublishResponse struct {
-		ReasonCode byte
 		Properties *PublishResponseProperties
+		ReasonCode byte
 	}
 
 	// PublishResponseProperties is the properties associated with

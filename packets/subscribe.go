@@ -8,17 +8,17 @@ import (
 
 // Subscribe is the Variable Header definition for a Subscribe control packet
 type Subscribe struct {
-	PacketID      uint16
 	Properties    *Properties
 	Subscriptions map[string]SubOptions
+	PacketID      uint16
 }
 
 // SubOptions is the struct representing the options for a subscription
 type SubOptions struct {
 	QoS               byte
+	RetainHandling    byte
 	NoLocal           bool
 	RetainAsPublished bool
-	RetainHandling    byte
 }
 
 // Pack is the implementation of the interface required function for a packet

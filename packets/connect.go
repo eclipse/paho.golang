@@ -8,22 +8,22 @@ import (
 
 // Connect is the Variable Header definition for a connect control packet
 type Connect struct {
-	PasswordFlag    bool
-	UsernameFlag    bool
-	ProtocolName    string
-	ProtocolVersion byte
-	WillTopic       string
-	WillRetain      bool
-	WillQOS         byte
-	WillFlag        bool
 	WillMessage     []byte
-	CleanStart      bool
-	Username        string
 	Password        []byte
-	KeepAlive       uint16
+	Username        string
+	ProtocolName    string
 	ClientID        string
+	WillTopic       string
 	Properties      *Properties
 	WillProperties  *Properties
+	KeepAlive       uint16
+	ProtocolVersion byte
+	WillQOS         byte
+	PasswordFlag    bool
+	UsernameFlag    bool
+	WillRetain      bool
+	WillFlag        bool
+	CleanStart      bool
 }
 
 // PackFlags takes the Connect flags and packs them into the single byte

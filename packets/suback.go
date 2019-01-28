@@ -8,9 +8,9 @@ import (
 
 // Suback is the Variable Header definition for a Suback control packet
 type Suback struct {
-	PacketID   uint16
 	Properties *Properties
 	Reasons    []byte
+	PacketID   uint16
 }
 
 // SubackGrantedQoS0, etc are the list of valid suback reason codes.

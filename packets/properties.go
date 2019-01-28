@@ -10,32 +10,32 @@ import (
 // MQTT packet properties
 const (
 	PropPayloadFormat          byte = 1
-	PropMessageExpiry               = 2
-	PropContentType                 = 3
-	PropResponseTopic               = 8
-	PropCorrelationData             = 9
-	PropSubscriptionIdentifier      = 11
-	PropSessionExpiryInterval       = 17
-	PropAssignedClientID            = 18
-	PropServerKeepAlive             = 19
-	PropAuthMethod                  = 21
-	PropAuthData                    = 22
-	PropRequestProblemInfo          = 23
-	PropWillDelayInterval           = 24
-	PropRequestResponseInfo         = 25
-	PropResponseInfo                = 26
-	PropServerReference             = 28
-	PropReasonString                = 31
-	PropReceiveMaximum              = 33
-	PropTopicAliasMaximum           = 34
-	PropTopicAlias                  = 35
-	PropMaximumQOS                  = 36
-	PropRetainAvailable             = 37
-	PropUser                        = 38
-	PropMaximumPacketSize           = 39
-	PropWildcardSubAvailable        = 40
-	PropSubIDAvailable              = 41
-	PropSharedSubAvailable          = 42
+	PropMessageExpiry          byte = 2
+	PropContentType            byte = 3
+	PropResponseTopic          byte = 8
+	PropCorrelationData        byte = 9
+	PropSubscriptionIdentifier byte = 11
+	PropSessionExpiryInterval  byte = 17
+	PropAssignedClientID       byte = 18
+	PropServerKeepAlive        byte = 19
+	PropAuthMethod             byte = 21
+	PropAuthData               byte = 22
+	PropRequestProblemInfo     byte = 23
+	PropWillDelayInterval      byte = 24
+	PropRequestResponseInfo    byte = 25
+	PropResponseInfo           byte = 26
+	PropServerReference        byte = 28
+	PropReasonString           byte = 31
+	PropReceiveMaximum         byte = 33
+	PropTopicAliasMaximum      byte = 34
+	PropTopicAlias             byte = 35
+	PropMaximumQOS             byte = 36
+	PropRetainAvailable        byte = 37
+	PropUser                   byte = 38
+	PropMaximumPacketSize      byte = 39
+	PropWildcardSubAvailable   byte = 40
+	PropSubIDAvailable         byte = 41
+	PropSharedSubAvailable     byte = 42
 )
 
 // Properties is a struct representing the all the described properties
@@ -323,7 +323,7 @@ func (i *Properties) Unpack(r *bytes.Buffer, p PacketType) error {
 			break
 		}
 		if !ValidateID(p, PropType) {
-			return fmt.Errorf("Invalid Prop type %d for packet %d", PropType, p)
+			return fmt.Errorf("invalid Prop type %d for packet %d", PropType, p)
 		}
 		switch PropType {
 		case PropPayloadFormat:
@@ -493,7 +493,7 @@ func (i *Properties) Unpack(r *bytes.Buffer, p PacketType) error {
 			}
 			i.SharedSubAvailable = &ss
 		default:
-			return fmt.Errorf("Unknown Prop type %d", PropType)
+			return fmt.Errorf("unknown Prop type %d", PropType)
 		}
 	}
 
