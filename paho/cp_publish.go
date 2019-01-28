@@ -20,13 +20,13 @@ type (
 	// PublishProperties is a struct of the properties that can be set
 	// for a Publish packet
 	PublishProperties struct {
-		PayloadFormat          *byte
-		MessageExpiry          *uint32
+		CorrelationData        []byte
 		ContentType            string
 		ResponseTopic          string
-		CorrelationData        []byte
-		TopicAlias             *uint16
+		PayloadFormat          *byte
+		MessageExpiry          *uint32
 		SubscriptionIdentifier *uint32
+		TopicAlias             *uint16
 		User                   map[string]string
 	}
 )

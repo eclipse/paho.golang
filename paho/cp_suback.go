@@ -5,8 +5,8 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Suback is a representation of an MQTT suback packet
 	Suback struct {
-		Reasons    []byte
 		Properties *SubackProperties
+		Reasons    []byte
 	}
 
 	// SubackProperties is a struct of the properties that can be set

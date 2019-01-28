@@ -8,9 +8,9 @@ import (
 
 // Pubcomp is the Variable Header definition for a Pubcomp control packet
 type Pubcomp struct {
+	Properties *Properties
 	PacketID   uint16
 	ReasonCode byte
-	Properties *Properties
 }
 
 // PubcompSuccess, etc are the list of valid pubcomp reason codes.

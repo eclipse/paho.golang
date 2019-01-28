@@ -8,9 +8,9 @@ import (
 
 // Unsubscribe is the Variable Header definition for a Unsubscribe control packet
 type Unsubscribe struct {
-	PacketID   uint16
-	Properties *Properties
 	Topics     []string
+	Properties *Properties
+	PacketID   uint16
 }
 
 // Unpack is the implementation of the interface required function for a packet
