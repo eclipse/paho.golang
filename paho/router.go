@@ -99,17 +99,11 @@ func match(route, topic string) bool {
 
 func matchDeep(route []string, topic []string) bool {
 	if len(route) == 0 {
-		if len(topic) == 0 {
-			return true
-		}
-		return false
+		return len(topic) == 0
 	}
 
 	if len(topic) == 0 {
-		if route[0] == "#" {
-			return true
-		}
-		return false
+		return route[0] == "#"
 	}
 
 	if route[0] == "#" {

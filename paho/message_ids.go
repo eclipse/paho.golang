@@ -33,8 +33,8 @@ type MIDService interface {
 // The response packet is send down the Return channel and the
 // Context is used to track timeouts.
 type CPContext struct {
-	Return  chan packets.ControlPacket
 	Context context.Context
+	Return  chan packets.ControlPacket
 }
 
 // MIDs is the default MIDService provided by this library.

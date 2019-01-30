@@ -19,10 +19,13 @@ type (
 // Packet returns a packets library Unsubscribe from the paho Unsubscribe
 // on which it is called
 func (u *Unsubscribe) Packet() *packets.Unsubscribe {
-	return &packets.Unsubscribe{
-		Topics: u.Topics,
-		Properties: &packets.Properties{
+	v := &packets.Unsubscribe{Topics: u.Topics}
+
+	if u.Properties != nil {
+		v.Properties = &packets.Properties{
 			User: u.Properties.User,
-		},
+		}
 	}
+
+	return v
 }

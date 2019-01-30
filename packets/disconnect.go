@@ -8,8 +8,8 @@ import (
 
 // Disconnect is the Variable Header definition for a Disconnect control packet
 type Disconnect struct {
-	ReasonCode byte
 	Properties *Properties
+	ReasonCode byte
 }
 
 // DisconnectNormalDisconnection, etc are the list of valid disconnection reason codes.

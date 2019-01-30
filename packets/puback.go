@@ -8,9 +8,9 @@ import (
 
 // Puback is the Variable Header definition for a Puback control packet
 type Puback struct {
+	Properties *Properties
 	PacketID   uint16
 	ReasonCode byte
-	Properties *Properties
 }
 
 // PubackSuccess, etc are the list of valid puback reason codes.

@@ -8,9 +8,9 @@ import (
 
 // Pubrec is the Variable Header definition for a Pubrec control packet
 type Pubrec struct {
+	Properties *Properties
 	PacketID   uint16
 	ReasonCode byte
-	Properties *Properties
 }
 
 // PubrecSuccess, etc are the list of valid Pubrec reason codes

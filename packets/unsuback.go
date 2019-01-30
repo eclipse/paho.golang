@@ -8,9 +8,9 @@ import (
 
 // Unsuback is the Variable Header definition for a Unsuback control packet
 type Unsuback struct {
-	PacketID   uint16
-	Properties *Properties
 	Reasons    []byte
+	Properties *Properties
+	PacketID   uint16
 }
 
 // UnsubackSuccess, etc are the list of valid unsuback reason codes.

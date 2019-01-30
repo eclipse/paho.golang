@@ -5,16 +5,16 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Disconnect is a representation of the MQTT Disconnect packet
 	Disconnect struct {
-		ReasonCode byte
 		Properties *DisconnectProperties
+		ReasonCode byte
 	}
 
 	// DisconnectProperties is a struct of the properties that can be set
 	// for a Disconnect packet
 	DisconnectProperties struct {
-		SessionExpiryInterval *uint32
 		ServerReference       string
 		ReasonString          string
+		SessionExpiryInterval *uint32
 		User                  map[string]string
 	}
 )

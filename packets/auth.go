@@ -8,8 +8,8 @@ import (
 
 // Auth is the Variable Header definition for a Auth control packet
 type Auth struct {
-	ReasonCode byte
 	Properties *Properties
+	ReasonCode byte
 }
 
 // Unpack is the implementation of the interface required function for a packet
