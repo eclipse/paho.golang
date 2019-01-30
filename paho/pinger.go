@@ -32,11 +32,11 @@ type Pinger interface {
 
 // PingHandler is the library provided default Pinger
 type PingHandler struct {
-	stop            chan struct{}
-	conn            net.Conn
 	lastPing        time.Time
-	pingOutstanding int32
+	conn            net.Conn
+	stop            chan struct{}
 	pingFailHandler PingFailHandler
+	pingOutstanding int32
 }
 
 // DefaultPingerWithCustomFailHandler returns an instance of the
@@ -61,12 +61,12 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 			debug.Println("pingHandler stopped")
 			return
 		case <-checkTicker.C:
-			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Now().Sub(p.lastPing) > (pt+pt>>1) {
-				p.pingFailHandler(fmt.Errorf("Ping resp timed out"))
+			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
+				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
 				//ping outstanding and not reset in 1.5 times ping timer
 				return
 			}
-			if time.Now().Sub(p.lastPing) >= pt {
+			if time.Since(p.lastPing) >= pt {
 				//time to send a ping
 				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
 					debug.Println("pingHandler sending ping request")

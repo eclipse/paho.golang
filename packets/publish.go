@@ -9,13 +9,13 @@ import (
 
 // Publish is the Variable Header definition for a publish control packet
 type Publish struct {
-	Duplicate  bool
-	QoS        byte
-	Retain     bool
-	Topic      string
-	PacketID   uint16
-	Properties *Properties
 	Payload    []byte
+	Topic      string
+	Properties *Properties
+	PacketID   uint16
+	QoS        byte
+	Duplicate  bool
+	Retain     bool
 }
 
 //Unpack is the implementation of the interface required function for a packet

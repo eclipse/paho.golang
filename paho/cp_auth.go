@@ -5,15 +5,15 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Auth is a representation of the MQTT Auth packet
 	Auth struct {
-		ReasonCode byte
 		Properties *AuthProperties
+		ReasonCode byte
 	}
 
 	// AuthProperties is a struct of the properties that can be set
 	// for a Auth packet
 	AuthProperties struct {
-		AuthMethod   string
 		AuthData     []byte
+		AuthMethod   string
 		ReasonString string
 		User         map[string]string
 	}
@@ -60,9 +60,9 @@ func (a *Auth) Packet() *packets.Auth {
 // AuthResponse is a represenation of the response to an Auth
 // packet
 type AuthResponse struct {
-	Success    bool
-	ReasonCode byte
 	Properties *AuthProperties
+	ReasonCode byte
+	Success    bool
 }
 
 // AuthResponseFromPacketAuth takes a packets library Auth and

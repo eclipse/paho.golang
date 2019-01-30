@@ -5,30 +5,30 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Connack is a representation of the MQTT Connack packet
 	Connack struct {
-		SessionPresent bool
-		ReasonCode     byte
 		Properties     *ConnackProperties
+		ReasonCode     byte
+		SessionPresent bool
 	}
 
 	// ConnackProperties is a struct of the properties that can be set
 	// for a Connack packet
 	ConnackProperties struct {
+		AuthData             []byte
+		AuthMethod           string
+		ResponseInfo         string
+		ServerReference      string
+		ReasonString         string
 		AssignedClientID     string
+		MaximumPacketSize    *uint32
+		ReceiveMaximum       *uint16
+		TopicAliasMaximum    *uint16
 		ServerKeepAlive      *uint16
+		MaximumQoS           *byte
+		User                 map[string]string
 		WildcardSubAvailable bool
 		SubIDAvailable       bool
 		SharedSubAvailable   bool
 		RetainAvailable      bool
-		ResponseInfo         string
-		AuthMethod           string
-		AuthData             []byte
-		ServerReference      string
-		ReasonString         string
-		ReceiveMaximum       *uint16
-		TopicAliasMaximum    *uint16
-		MaximumQoS           *byte
-		MaximumPacketSize    *uint32
-		User                 map[string]string
 	}
 )
 

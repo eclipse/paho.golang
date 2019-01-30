@@ -5,16 +5,16 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Subscribe is a representation of a MQTT subscribe packet
 	Subscribe struct {
-		Subscriptions map[string]SubscribeOptions
 		Properties    *SubscribeProperties
+		Subscriptions map[string]SubscribeOptions
 	}
 
 	// SubscribeOptions is the struct representing the options for a subscription
 	SubscribeOptions struct {
 		QoS               byte
+		RetainHandling    byte
 		NoLocal           bool
 		RetainAsPublished bool
-		RetainHandling    byte
 	}
 )
 

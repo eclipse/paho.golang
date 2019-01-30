@@ -8,9 +8,9 @@ import (
 
 // Connack is the Variable Header definition for a connack control packet
 type Connack struct {
-	SessionPresent bool
-	ReasonCode     byte
 	Properties     *Properties
+	ReasonCode     byte
+	SessionPresent bool
 }
 
 //Unpack is the implementation of the interface required function for a packet
@@ -36,7 +36,19 @@ func (c *Connack) Unpack(r *bytes.Buffer) error {
 
 // Buffers is the implementation of the interface required function for a packet
 func (c *Connack) Buffers() net.Buffers {
-	return nil
+	var header bytes.Buffer
+
+	if c.SessionPresent {
+		header.WriteByte(1)
+	} else {
+		header.WriteByte(0)
+	}
+	header.WriteByte(c.ReasonCode)
+
+	idvp := c.Properties.Pack(CONNACK)
+	propLen := encodeVBI(len(idvp))
+
+	return net.Buffers{header.Bytes(), propLen, idvp}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

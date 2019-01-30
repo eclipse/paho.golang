@@ -5,14 +5,14 @@ import "github.com/eclipse/paho.golang/packets"
 type (
 	// Connect is a representation of the MQTT Connect packet
 	Connect struct {
-		Username       string
 		Password       []byte
+		Username       string
 		ClientID       string
-		CleanStart     bool
-		KeepAlive      uint16
 		Properties     *ConnectProperties
 		WillMessage    *WillMessage
 		WillProperties *WillProperties
+		KeepAlive      uint16
+		CleanStart     bool
 		UsernameFlag   bool
 		PasswordFlag   bool
 	}
@@ -20,17 +20,17 @@ type (
 	// ConnectProperties is a struct of the properties that can be set
 	// for a Connect packet
 	ConnectProperties struct {
-		SessionExpiryInterval *uint32
-		AuthMethod            string
 		AuthData              []byte
+		AuthMethod            string
+		SessionExpiryInterval *uint32
 		WillDelayInterval     *uint32
-		RequestProblemInfo    bool
-		RequestResponseInfo   bool
 		ReceiveMaximum        *uint16
 		TopicAliasMaximum     *uint16
 		MaximumQOS            *byte
 		MaximumPacketSize     *uint32
 		User                  map[string]string
+		RequestProblemInfo    bool
+		RequestResponseInfo   bool
 	}
 )
 
