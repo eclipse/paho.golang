@@ -15,6 +15,17 @@ type Unsubscribe struct {
 
 // Unpack is the implementation of the interface required function for a packet
 func (u *Unsubscribe) Unpack(r *bytes.Buffer) error {
+	var err error
+	u.PacketID, err = readUint16(r)
+	if err != nil {
+		return err
+	}
+
+	err = u.Properties.Unpack(r, UNSUBSCRIBE)
+	if err != nil {
+		return err
+	}
+
 	for {
 		t, err := readString(r)
 		if err != nil && err != io.EOF {
@@ -33,10 +44,13 @@ func (u *Unsubscribe) Unpack(r *bytes.Buffer) error {
 func (u *Unsubscribe) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeUint16(u.PacketID, &b)
+	var topics bytes.Buffer
 	for _, t := range u.Topics {
-		writeString(t, &b)
+		writeString(t, &topics)
 	}
-	return net.Buffers{b.Bytes()}
+	idvp := u.Properties.Pack(UNSUBSCRIBE)
+	propLen := encodeVBI(len(idvp))
+	return net.Buffers{b.Bytes(), propLen, idvp, topics.Bytes()}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

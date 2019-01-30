@@ -67,7 +67,7 @@ type (
 // client.Conn *MUST* be set to an already connected net.Conn before
 // Connect() is called.
 func NewClient() *Client {
-	debug.Println("Creating new client")
+	debug.Println("creating new client")
 	c := &Client{
 		stop: make(chan struct{}),
 		serverProps: CommsProperties{
@@ -113,7 +113,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		return nil, fmt.Errorf("client connection is nil")
 	}
 
-	debug.Println("Connecting")
+	debug.Println("connecting")
 	c.Lock()
 	defer c.Unlock()
 
@@ -134,7 +134,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		}
 	}
 
-	debug.Println("Starting Incoming")
+	debug.Println("starting Incoming")
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
@@ -208,7 +208,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
 	c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
 
-	debug.Println("Received CONNACK, starting PingHandler")
+	debug.Println("received CONNACK, starting PingHandler")
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
@@ -227,7 +227,7 @@ func (c *Client) Incoming() {
 	for {
 		select {
 		case <-c.stop:
-			debug.Println("Client stopping, Incoming stopping")
+			debug.Println("client stopping, Incoming stopping")
 			return
 		default:
 			recv, err := packets.ReadPacket(c.Conn)
@@ -235,7 +235,6 @@ func (c *Client) Incoming() {
 				c.Error(err)
 				return
 			}
-			debug.Println("Received a control packet:", recv.Type)
 			switch recv.Type {
 			case packets.CONNACK:
 				cap := recv.Content.(*packets.Connack)
@@ -278,14 +277,15 @@ func (c *Client) Incoming() {
 					pr.WriteTo(c.Conn)
 				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
+				debug.Println("received packet with id", recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
 					cpCtx.Return <- *recv
 				} else {
-					debug.Println("Received a response for a message ID we don't know:", recv.PacketID())
+					debug.Println("received a response for a message ID we don't know:", recv.PacketID())
 				}
 			case packets.PUBREC:
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
-					debug.Println("Received a PUBREC for a message ID we don't know:", recv.PacketID())
+					debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
 					pl := packets.Pubrel{
 						PacketID:   recv.Content.(*packets.Pubrec).PacketID,
 						ReasonCode: 0x92,
@@ -333,7 +333,7 @@ func (c *Client) Incoming() {
 // which results in the other client goroutines terminating.
 // It also closes the client network connection.
 func (c *Client) Error(e error) {
-	debug.Println("Error called:", e)
+	debug.Println("error called:", e)
 	c.Lock()
 	select {
 	case <-c.stop:
@@ -440,7 +440,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	if sap.Type != packets.SUBACK {
 		return nil, fmt.Errorf("received %d instead of Suback", sap.Type)
 	}
-	debug.Println("Received SUBACK")
+	debug.Println("received SUBACK")
 
 	sa := SubackFromPacketSuback(sap.Content.(*packets.Suback))
 	switch {

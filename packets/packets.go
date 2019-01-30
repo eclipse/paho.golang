@@ -176,6 +176,7 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if n != int64(cp.remainingLength) {
 		return nil, fmt.Errorf("failed to read packet, expected %d bytes, read %d", cp.remainingLength, n)
 	}

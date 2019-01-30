@@ -36,6 +36,20 @@ func (s *SubOptions) Pack() byte {
 	return ret
 }
 
+func (s *SubOptions) Unpack(r *bytes.Buffer) error {
+	b, err := r.ReadByte()
+	if err != nil {
+		return err
+	}
+
+	s.QoS = b & 0x03
+	s.NoLocal = (b & 1 << 2) == 1
+	s.RetainAsPublished = (b & 1 << 3) == 1
+	s.RetainHandling = b & 0x30
+
+	return nil
+}
+
 // Unpack is the implementation of the interface required function for a packet
 func (s *Subscribe) Unpack(r *bytes.Buffer) error {
 	var err error
@@ -47,6 +61,18 @@ func (s *Subscribe) Unpack(r *bytes.Buffer) error {
 	err = s.Properties.Unpack(r, SUBSCRIBE)
 	if err != nil {
 		return err
+	}
+
+	for r.Len() > 0 {
+		var so SubOptions
+		t, err := readString(r)
+		if err != nil {
+			return err
+		}
+		if err = so.Unpack(r); err != nil {
+			return err
+		}
+		s.Subscriptions[t] = so
 	}
 
 	return nil
