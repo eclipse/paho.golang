@@ -10,6 +10,7 @@ import (
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 )
 
 func TestNewClient(t *testing.T) {
@@ -132,6 +133,74 @@ func TestClientUnsubscribe(t *testing.T) {
 	ua, err := c.Unsubscribe(context.Background(), u)
 	require.Nil(t, err)
 	assert.Equal(t, []byte{0, 17}, ua.Reasons)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientPublishQoS1(t *testing.T) {
+	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
+	ts := newTestServer()
+	ts.SetResponse(packets.PUBACK, &packets.Puback{
+		ReasonCode: packets.PubackSuccess,
+		Properties: &packets.Properties{},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient()
+	require.NotNil(t, c)
+
+	c.Conn = ts.ClientConn()
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	p := &Publish{
+		Topic:   "test/2",
+		QoS:     1,
+		Payload: []byte("test payload"),
+	}
+
+	pa, err := c.Publish(context.Background(), p)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), pa.ReasonCode)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientPublishQoS2(t *testing.T) {
+	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
+	ts := newTestServer()
+	ts.SetResponse(packets.PUBREC, &packets.Pubrec{
+		ReasonCode: packets.PubrecSuccess,
+		Properties: &packets.Properties{},
+	})
+	ts.SetResponse(packets.PUBCOMP, &packets.Pubcomp{
+		ReasonCode: packets.PubcompSuccess,
+		Properties: &packets.Properties{},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient()
+	require.NotNil(t, c)
+
+	c.Conn = ts.ClientConn()
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	p := &Publish{
+		Topic:   "test/2",
+		QoS:     2,
+		Payload: []byte("test payload"),
+	}
+
+	pr, err := c.Publish(context.Background(), p)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), pr.ReasonCode)
 
 	time.Sleep(10 * time.Millisecond)
 }

@@ -52,9 +52,9 @@ func (p *Publish) Buffers() net.Buffers {
 	if p.QoS > 0 {
 		writeUint16(p.PacketID, &b)
 	}
-	properties := p.Properties.Pack(PUBLISH)
-	propLen := encodeVBI(len(properties))
-	return net.Buffers{b.Bytes(), propLen, properties, p.Payload}
+	idvp := p.Properties.Pack(PUBLISH)
+	propLen := encodeVBI(len(idvp))
+	return net.Buffers{b.Bytes(), propLen, idvp, p.Payload}
 
 }
 
