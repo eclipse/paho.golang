@@ -37,9 +37,13 @@ func (a *Auth) Unpack(r *bytes.Buffer) error {
 
 // Buffers is the implementation of the interface required function for a packet
 func (a *Auth) Buffers() net.Buffers {
-	properties := a.Properties.Pack(AUTH)
-	propLen := encodeVBI(len(properties))
-	return net.Buffers{[]byte{a.ReasonCode}, propLen, properties}
+	idvp := a.Properties.Pack(AUTH)
+	propLen := encodeVBI(len(idvp))
+	n := net.Buffers{[]byte{a.ReasonCode}, propLen}
+	if len(idvp) > 0 {
+		n = append(n, idvp)
+	}
+	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet

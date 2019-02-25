@@ -58,7 +58,11 @@ func (p *Puback) Buffers() net.Buffers {
 	b.WriteByte(p.ReasonCode)
 	idvp := p.Properties.Pack(PUBACK)
 	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp}
+	n := net.Buffers{b.Bytes(), propLen}
+	if len(idvp) > 0 {
+		n = append(n, idvp)
+	}
+	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet

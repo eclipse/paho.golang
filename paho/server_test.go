@@ -75,9 +75,36 @@ func (t *testServer) Run() {
 				}
 			case packets.AUTH:
 			case packets.PUBLISH:
+				log.Println("received publish", recv.Content.(*packets.Publish))
+				switch recv.Content.(*packets.Publish).QoS {
+				case 1:
+					if p, ok := t.responses[packets.PUBACK]; ok {
+						p.(*packets.Puback).PacketID = recv.PacketID()
+						if _, err := p.WriteTo(t.conn); err != nil {
+							log.Println(err)
+						}
+					}
+				case 2:
+					if p, ok := t.responses[packets.PUBREC]; ok {
+						p.(*packets.Pubrec).PacketID = recv.PacketID()
+						log.Println("sending pubrec")
+						if _, err := p.WriteTo(t.conn); err != nil {
+							log.Println(err)
+						}
+						log.Println("sent pubrec")
+					}
+				}
+
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 			case packets.PUBREC:
 			case packets.PUBREL:
+				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
+				if p, ok := t.responses[packets.PUBCOMP]; ok {
+					p.(*packets.Pubcomp).PacketID = recv.PacketID()
+					if _, err := p.WriteTo(t.conn); err != nil {
+						log.Println(err)
+					}
+				}
 			case packets.DISCONNECT:
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")

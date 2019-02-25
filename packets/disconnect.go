@@ -65,7 +65,11 @@ func (d *Disconnect) Unpack(r *bytes.Buffer) error {
 func (d *Disconnect) Buffers() net.Buffers {
 	idvp := d.Properties.Pack(DISCONNECT)
 	propLen := encodeVBI(len(idvp))
-	return net.Buffers{[]byte{d.ReasonCode}, propLen, idvp}
+	n := net.Buffers{[]byte{d.ReasonCode}, propLen}
+	if len(idvp) > 0 {
+		n = append(n, idvp)
+	}
+	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet

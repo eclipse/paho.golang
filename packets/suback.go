@@ -37,11 +37,9 @@ func (s *Suback) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	if r.Len() > 2 {
-		err = s.Properties.Unpack(r, SUBACK)
-		if err != nil {
-			return err
-		}
+	err = s.Properties.Unpack(r, SUBACK)
+	if err != nil {
+		return err
 	}
 
 	s.Reasons = r.Bytes()
