@@ -48,7 +48,12 @@ func (c *Connack) Buffers() net.Buffers {
 	idvp := c.Properties.Pack(CONNACK)
 	propLen := encodeVBI(len(idvp))
 
-	return net.Buffers{header.Bytes(), propLen, idvp}
+	n := net.Buffers{header.Bytes(), propLen}
+	if len(idvp) > 0 {
+		n = append(n, idvp)
+	}
+
+	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet

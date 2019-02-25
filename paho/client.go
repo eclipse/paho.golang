@@ -284,6 +284,7 @@ func (c *Client) Incoming() {
 					debug.Println("received a response for a message ID we don't know:", recv.PacketID())
 				}
 			case packets.PUBREC:
+				debug.Println("received pubrec")
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
 					debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
 					pl := packets.Pubrel{

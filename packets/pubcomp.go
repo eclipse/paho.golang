@@ -49,9 +49,14 @@ func (p *Pubcomp) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeUint16(p.PacketID, &b)
 	b.WriteByte(p.ReasonCode)
+	n := net.Buffers{b.Bytes()}
 	idvp := p.Properties.Pack(PUBCOMP)
 	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp}
+	if len(idvp) > 0 {
+		n = append(n, propLen)
+		n = append(n, idvp)
+	}
+	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet
