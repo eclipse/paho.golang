@@ -65,6 +65,16 @@ func TestClientConnect(t *testing.T) {
 		KeepAlive:  30,
 		ClientID:   "testClient",
 		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+		WillMessage: &WillMessage{
+			Topic:   "will/topic",
+			Payload: []byte("am gone"),
+		},
+		WillProperties: &WillProperties{
+			WillDelayInterval: Uint32(200),
+		},
 	}
 
 	ca, err := c.Connect(context.Background(), cp)
@@ -203,4 +213,68 @@ func TestClientPublishQoS2(t *testing.T) {
 	assert.Equal(t, uint8(0), pr.ReasonCode)
 
 	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientReceiveQoS1(t *testing.T) {
+	rChan := make(chan struct{})
+	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS1: ", log.LstdFlags))
+	ts := newTestServer()
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient()
+	require.NotNil(t, c)
+
+	c.Router = NewSingleHandlerRouter(func(p *Publish) {
+		assert.Equal(t, "test/1", p.Topic)
+		assert.Equal(t, "test payload", string(p.Payload))
+		assert.Equal(t, byte(1), p.QoS)
+		close(rChan)
+	})
+
+	c.Conn = ts.ClientConn()
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	ts.SendPacket(&packets.Publish{
+		Topic:   "test/1",
+		QoS:     1,
+		Payload: []byte("test payload"),
+	})
+
+	<-rChan
+}
+
+func TestClientReceiveQoS2(t *testing.T) {
+	rChan := make(chan struct{})
+	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS2: ", log.LstdFlags))
+	ts := newTestServer()
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient()
+	require.NotNil(t, c)
+
+	c.Router = NewSingleHandlerRouter(func(p *Publish) {
+		assert.Equal(t, "test/2", p.Topic)
+		assert.Equal(t, "test payload", string(p.Payload))
+		assert.Equal(t, byte(2), p.QoS)
+		close(rChan)
+	})
+
+	c.Conn = ts.ClientConn()
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	ts.SendPacket(&packets.Publish{
+		Topic:   "test/2",
+		QoS:     2,
+		Payload: []byte("test payload"),
+	})
+
+	<-rChan
 }

@@ -32,6 +32,10 @@ func (t *testServer) SetResponse(pt packets.PacketType, p packets.Packet) {
 	t.responses[pt] = p
 }
 
+func (t *testServer) SendPacket(p packets.Packet) {
+	p.WriteTo(t.conn)
+}
+
 func (t *testServer) Stop() {
 	t.conn.Close()
 	close(t.stop)
@@ -95,8 +99,22 @@ func (t *testServer) Run() {
 					}
 				}
 
-			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
+			case packets.PUBACK:
+				log.Println("recevied puback", recv.Content.(*packets.Puback))
+			case packets.PUBCOMP:
+				log.Println("received pubcomp", recv.Content.(*packets.Pubcomp))
+			case packets.SUBACK:
+				log.Println("received suback")
+			case packets.UNSUBACK:
+				log.Println("received unsuback")
 			case packets.PUBREC:
+				log.Println("received pubrec", recv.Content.(*packets.Pubrec))
+				if p, ok := t.responses[packets.PUBREL]; ok {
+					p.(*packets.Pubrel).PacketID = recv.PacketID()
+					if _, err := p.WriteTo(t.conn); err != nil {
+						log.Println(err)
+					}
+				}
 			case packets.PUBREL:
 				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
 				if p, ok := t.responses[packets.PUBCOMP]; ok {
@@ -106,6 +124,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.DISCONNECT:
+				log.Println("recevied disconnect")
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
