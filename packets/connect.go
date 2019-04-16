@@ -92,6 +92,7 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 	}
 
 	if c.WillFlag {
+		c.WillProperties = &Properties{User: make(map[string]string)}
 		err = c.WillProperties.Unpack(r, CONNECT)
 		if err != nil {
 			return err
@@ -137,8 +138,8 @@ func (c *Connect) Buffers() net.Buffers {
 	writeString(c.ClientID, &body)
 	if c.WillFlag {
 		willIdvp := c.WillProperties.Pack(CONNECT)
-		writeBinary(encodeVBI(len(willIdvp)), &body)
-		writeBinary(willIdvp, &body)
+		body.Write(encodeVBI(len(willIdvp)))
+		body.Write(willIdvp)
 		writeString(c.WillTopic, &body)
 		writeBinary(c.WillMessage, &body)
 	}
