@@ -47,7 +47,9 @@ func listener(server, rTopic, username, password string) {
 			log.Fatalf("Failed to connect to %s: %s", server, err)
 		}
 
-		c := paho.NewClient()
+		c := paho.NewClient(paho.ClientConfig{
+			Conn: conn,
+		})
 		c.Router = paho.NewSingleHandlerRouter(func(m *paho.Publish) {
 			if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
 				log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
@@ -80,7 +82,6 @@ func listener(server, rTopic, username, password string) {
 				})
 			}
 		})
-		c.Conn = conn
 
 		cp := &paho.Connect{
 			KeepAlive:  30,
@@ -138,9 +139,10 @@ func main() {
 		log.Fatalf("Failed to connect to %s: %s", *server, err)
 	}
 
-	c := paho.NewClient()
-	c.Router = paho.NewSingleHandlerRouter(nil)
-	c.Conn = conn
+	c := paho.NewClient(paho.ClientConfig{
+		Router: paho.NewSingleHandlerRouter(nil),
+		Conn:   conn,
+	})
 
 	cp := &paho.Connect{
 		KeepAlive:  30,
