@@ -12,10 +12,33 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
+type MQTTVersion byte
+
+const (
+	MQTTv311 MQTTVersion = 4
+	MQTTv5   MQTTVersion = 5
+)
+
 type (
+	// ClientConfig are the user configurable options for the client, an
+	// instance of this struct is passed into NewClient(), not all options
+	// are required to be set, defaults are provided for Persistence, MIDs,
+	// PingHandler, PacketTimeout and Router.
+	ClientConfig struct {
+		ClientID      string
+		Conn          net.Conn
+		MIDs          MIDService
+		AuthHandler   Auther
+		PingHandler   Pinger
+		Router        Router
+		Persistence   Persistence
+		PacketTimeout time.Duration
+		OnDisconnect  func(packets.Disconnect)
+	}
 	// Client is the struct representing an MQTT client
 	Client struct {
 		sync.Mutex
+		ClientConfig
 		// caCtx is used for synchronously handling the connect/connack
 		// flow, raCtx is used for handling the MQTTv5 authentication
 		// exchange.
@@ -27,16 +50,6 @@ type (
 		clientProps    CommsProperties
 		serverInflight *semaphore.Weighted
 		clientInflight *semaphore.Weighted
-
-		ClientID      string
-		Conn          net.Conn
-		MIDs          MIDService
-		AuthHandler   Auther
-		PingHandler   Pinger
-		Router        Router
-		Persistence   Persistence
-		PacketTimeout time.Duration
-		OnDisconnect  func(packets.Disconnect)
 	}
 
 	// CommsProperties is a struct of the communication properties that may
@@ -66,7 +79,7 @@ type (
 // These should be replaced if desired before the client is connected.
 // client.Conn *MUST* be set to an already connected net.Conn before
 // Connect() is called.
-func NewClient() *Client {
+func NewClient(conf ClientConfig) *Client {
 	debug.Println("creating new client")
 	c := &Client{
 		stop: make(chan struct{}),
@@ -86,16 +99,27 @@ func NewClient() *Client {
 			MaximumPacketSize: 0,
 			TopicAliasMaximum: 0,
 		},
-		Persistence:   &noopPersistence{},
-		MIDs:          &MIDs{index: make(map[uint16]*CPContext)},
-		PacketTimeout: 10 * time.Second,
-		Router:        NewStandardRouter(),
+		ClientConfig: conf,
 	}
 
-	c.PingHandler = &PingHandler{
-		pingFailHandler: func(e error) {
-			c.Error(e)
-		},
+	if c.Persistence == nil {
+		c.Persistence = &noopPersistence{}
+	}
+	if c.MIDs == nil {
+		c.MIDs = &MIDs{index: make(map[uint16]*CPContext)}
+	}
+	if c.PacketTimeout == 0 {
+		c.PacketTimeout = 10 * time.Second
+	}
+	if c.Router == nil {
+		c.Router = NewStandardRouter()
+	}
+	if c.PingHandler == nil {
+		c.PingHandler = &PingHandler{
+			pingFailHandler: func(e error) {
+				c.Error(e)
+			},
+		}
 	}
 
 	return c
