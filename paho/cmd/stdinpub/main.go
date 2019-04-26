@@ -33,8 +33,9 @@ func main() {
 		log.Fatalf("Failed to connect to %s: %s", *server, err)
 	}
 
-	c := paho.NewClient()
-	c.Conn = conn
+	c := paho.NewClient(paho.ClientConfig{
+		Conn: conn,
+	})
 
 	cp := &paho.Connect{
 		KeepAlive:  30,

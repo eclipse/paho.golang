@@ -30,11 +30,12 @@ func main() {
 		log.Fatalf("Failed to connect to %s: %s", *server, err)
 	}
 
-	c := paho.NewClient()
-	c.Router = paho.NewSingleHandlerRouter(func(m *paho.Publish) {
-		msgChan <- m
+	c := paho.NewClient(paho.ClientConfig{
+		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+			msgChan <- m
+		}),
+		Conn: conn,
 	})
-	c.Conn = conn
 
 	cp := &paho.Connect{
 		KeepAlive:  30,
