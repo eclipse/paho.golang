@@ -341,13 +341,13 @@ func (c *Client) Incoming() {
 					pc.WriteTo(c.Conn)
 				}
 			case packets.DISCONNECT:
-				if c.OnDisconnect != nil {
-					go c.OnDisconnect(*recv.Content.(*packets.Disconnect))
-				}
 				if c.raCtx != nil {
 					c.raCtx.Return <- *recv
 				}
 				c.Error(fmt.Errorf("received server initiated disconnect"))
+				if c.OnDisconnect != nil {
+					go c.OnDisconnect(*recv.Content.(*packets.Disconnect))
+				}
 			}
 		}
 	}
