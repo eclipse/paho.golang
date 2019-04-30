@@ -17,7 +17,6 @@ func TestNewClient(t *testing.T) {
 	c := NewClient(ClientConfig{})
 
 	require.NotNil(t, c)
-	require.NotNil(t, c.stop)
 	require.NotNil(t, c.Persistence)
 	require.NotNil(t, c.MIDs)
 	require.NotNil(t, c.Router)
@@ -99,6 +98,7 @@ func TestClientSubscribe(t *testing.T) {
 	})
 	require.NotNil(t, c)
 
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -132,6 +132,7 @@ func TestClientUnsubscribe(t *testing.T) {
 	})
 	require.NotNil(t, c)
 
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -166,6 +167,7 @@ func TestClientPublishQoS1(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -203,6 +205,7 @@ func TestClientPublishQoS2(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -239,6 +242,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -271,6 +275,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
