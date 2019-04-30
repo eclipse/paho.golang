@@ -82,7 +82,6 @@ type (
 func NewClient(conf ClientConfig) *Client {
 	debug.Println("creating new client")
 	c := &Client{
-		stop: make(chan struct{}),
 		serverProps: CommsProperties{
 			ReceiveMaximum:       65535,
 			MaximumQoS:           2,
@@ -133,9 +132,21 @@ func NewClient(conf ClientConfig) *Client {
 // returned. Otherwise the failure Connack (if there is one) is returned
 // along with an error indicating the reason for the failure to connect.
 func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
+	cleanup := func() {
+		select {
+		case <-c.stop:
+			//already shutting down, do nothing
+		default:
+			close(c.stop)
+		}
+		c.PingHandler.Stop()
+		c.Conn.Close()
+	}
 	if c.Conn == nil {
 		return nil, fmt.Errorf("client connection is nil")
 	}
+
+	c.stop = make(chan struct{})
 
 	debug.Println("connecting")
 	c.Lock()
@@ -179,6 +190,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 	debug.Println("sending CONNECT")
 	if _, err := ccp.WriteTo(c.Conn); err != nil {
+		cleanup()
 		return nil, err
 	}
 
@@ -188,6 +200,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	case <-connCtx.Done():
 		if e := connCtx.Err(); e == context.DeadlineExceeded {
 			debug.Println("timeout waiting for CONNACK")
+			cleanup()
 			return nil, e
 		}
 	case cap = <-c.caCtx.Return:
@@ -201,6 +214,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		if ca.Properties != nil {
 			reason = ca.Properties.ReasonString
 		}
+		cleanup()
 		return ca, fmt.Errorf("failed to connect to server: %s", reason)
 	}
 
