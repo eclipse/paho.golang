@@ -7,6 +7,19 @@ import (
 	"github.com/eclipse/paho.golang/packets"
 )
 
+type fakeAuth struct{}
+
+func (f *fakeAuth) Authenticate(a *Auth) *Auth {
+	return &Auth{
+		Properties: &AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	}
+}
+
+func (f *fakeAuth) Authenticated() {}
+
 type testServer struct {
 	conn       net.Conn
 	clientConn net.Conn
@@ -78,6 +91,13 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.AUTH:
+				log.Println("received auth", recv.Content.(*packets.Auth))
+				if p, ok := t.responses[packets.AUTH]; ok {
+					log.Println("sending auth")
+					if _, err := p.WriteTo(t.conn); err != nil {
+						log.Println(err)
+					}
+				}
 			case packets.PUBLISH:
 				log.Println("received publish", recv.Content.(*packets.Publish))
 				switch recv.Content.(*packets.Publish).QoS {

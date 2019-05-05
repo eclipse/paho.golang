@@ -36,6 +36,7 @@ func (s *SubOptions) Pack() byte {
 	return ret
 }
 
+// Unpack is the implementation of the interface required function for a packet
 func (s *SubOptions) Unpack(r *bytes.Buffer) error {
 	b, err := r.ReadByte()
 	if err != nil {
