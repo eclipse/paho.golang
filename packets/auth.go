@@ -12,6 +12,13 @@ type Auth struct {
 	ReasonCode byte
 }
 
+// AuthSuccess is the return code for successful authentication
+const (
+	AuthSuccess                = 0x00
+	AuthContinueAuthentication = 0x18
+	AuthReauthenticate         = 0x19
+)
+
 // Unpack is the implementation of the interface required function for a packet
 func (a *Auth) Unpack(r *bytes.Buffer) error {
 	var err error

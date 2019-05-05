@@ -150,6 +150,35 @@ func TestClientUnsubscribe(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 }
 
+func TestClientPublishQoS0(t *testing.T) {
+	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS0: ", log.LstdFlags))
+	ts := newTestServer()
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	p := &Publish{
+		Topic:   "test/0",
+		QoS:     0,
+		Payload: []byte("test payload"),
+	}
+
+	_, err := c.Publish(context.Background(), p)
+	require.Nil(t, err)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
 func TestClientPublishQoS1(t *testing.T) {
 	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
 	ts := newTestServer()
@@ -172,7 +201,7 @@ func TestClientPublishQoS1(t *testing.T) {
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	p := &Publish{
-		Topic:   "test/2",
+		Topic:   "test/1",
 		QoS:     1,
 		Payload: []byte("test payload"),
 	}
@@ -220,6 +249,39 @@ func TestClientPublishQoS2(t *testing.T) {
 	assert.Equal(t, uint8(0), pr.ReasonCode)
 
 	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientReceiveQoS0(t *testing.T) {
+	rChan := make(chan struct{})
+	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS0: ", log.LstdFlags))
+	ts := newTestServer()
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+		Router: NewSingleHandlerRouter(func(p *Publish) {
+			assert.Equal(t, "test/0", p.Topic)
+			assert.Equal(t, "test payload", string(p.Payload))
+			assert.Equal(t, byte(0), p.QoS)
+			close(rChan)
+		}),
+	})
+	require.NotNil(t, c)
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	ts.SendPacket(&packets.Publish{
+		Topic:   "test/0",
+		QoS:     0,
+		Payload: []byte("test payload"),
+	})
+
+	<-rChan
 }
 
 func TestClientReceiveQoS1(t *testing.T) {
@@ -286,4 +348,73 @@ func TestClientReceiveQoS2(t *testing.T) {
 	})
 
 	<-rChan
+}
+
+func TestReceiveServerDisconnect(t *testing.T) {
+	rChan := make(chan struct{})
+	SetDebugLogger(log.New(os.Stderr, "SERVERDISCONNECT: ", log.LstdFlags))
+	ts := newTestServer()
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+		OnDisconnect: func(d *Disconnect) {
+			assert.Equal(t, byte(packets.DisconnectServerShuttingDown), d.ReasonCode)
+			assert.Equal(t, d.Properties.ReasonString, "GONE!")
+			close(rChan)
+		},
+	})
+	require.NotNil(t, c)
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	ts.SendPacket(&packets.Disconnect{
+		ReasonCode: packets.DisconnectServerShuttingDown,
+		Properties: &packets.Properties{
+			ReasonString: "GONE!",
+		},
+	})
+
+	<-rChan
+}
+
+func TestAuthenticate(t *testing.T) {
+	SetDebugLogger(log.New(os.Stderr, "AUTHENTICATE: ", log.LstdFlags))
+	ts := newTestServer()
+	ts.SetResponse(packets.AUTH, &packets.Auth{
+		ReasonCode: packets.AuthSuccess,
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn:        ts.ClientConn(),
+		AuthHandler: &fakeAuth{},
+	})
+	require.NotNil(t, c)
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cf()
+	ar, err := c.Authenticate(ctx, &Auth{
+		ReasonCode: packets.AuthReauthenticate,
+		Properties: &AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	})
+	require.Nil(t, err)
+	assert.True(t, ar.Success)
+
+	time.Sleep(10 * time.Millisecond)
 }

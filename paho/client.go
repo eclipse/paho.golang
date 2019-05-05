@@ -33,7 +33,7 @@ type (
 		Router        Router
 		Persistence   Persistence
 		PacketTimeout time.Duration
-		OnDisconnect  func(packets.Disconnect)
+		OnDisconnect  func(*Disconnect)
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -360,7 +360,7 @@ func (c *Client) Incoming() {
 				}
 				c.Error(fmt.Errorf("received server initiated disconnect"))
 				if c.OnDisconnect != nil {
-					go c.OnDisconnect(*recv.Content.(*packets.Disconnect))
+					go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
 				}
 			}
 		}
