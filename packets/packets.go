@@ -57,8 +57,12 @@ type (
 // WriteTo operates on a FixedHeader and takes the option values and produces
 // the wire format byte that represents these.
 func (f *FixedHeader) WriteTo(w io.Writer) (int64, error) {
-	w.Write([]byte{byte(f.Type)<<4 | f.Flags})
-	w.Write(encodeVBI(f.remainingLength))
+	if _, err := w.Write([]byte{byte(f.Type)<<4 | f.Flags}); err != nil {
+		return 0, err
+	}
+	if _, err := w.Write(encodeVBI(f.remainingLength)); err != nil {
+		return 0, err
+	}
 
 	return 0, nil
 }
@@ -196,7 +200,9 @@ func (c *ControlPacket) WriteTo(w io.Writer) (int64, error) {
 	}
 
 	var header bytes.Buffer
-	c.FixedHeader.WriteTo(&header)
+	if _, err := c.FixedHeader.WriteTo(&header); err != nil {
+		return 0, err
+	}
 
 	buffers = append(net.Buffers{header.Bytes()}, buffers...)
 

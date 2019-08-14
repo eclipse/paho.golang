@@ -275,11 +275,12 @@ func TestClientReceiveQoS0(t *testing.T) {
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
-	ts.SendPacket(&packets.Publish{
+	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/0",
 		QoS:     0,
 		Payload: []byte("test payload"),
 	})
+	require.NoError(t, err)
 
 	<-rChan
 }
@@ -308,11 +309,12 @@ func TestClientReceiveQoS1(t *testing.T) {
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
-	ts.SendPacket(&packets.Publish{
+	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/1",
 		QoS:     1,
 		Payload: []byte("test payload"),
 	})
+	require.NoError(t, err)
 
 	<-rChan
 }
@@ -341,11 +343,12 @@ func TestClientReceiveQoS2(t *testing.T) {
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
-	ts.SendPacket(&packets.Publish{
+	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/2",
 		QoS:     2,
 		Payload: []byte("test payload"),
 	})
+	require.NoError(t, err)
 
 	<-rChan
 }
@@ -373,12 +376,13 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
-	ts.SendPacket(&packets.Disconnect{
+	err := ts.SendPacket(&packets.Disconnect{
 		ReasonCode: packets.DisconnectServerShuttingDown,
 		Properties: &packets.Properties{
 			ReasonString: "GONE!",
 		},
 	})
+	require.NoError(t, err)
 
 	<-rChan
 }

@@ -83,6 +83,9 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 // Stop is the library provided Pinger's implementation of
 // the required interface function()
 func (p *PingHandler) Stop() {
+	if p.stop == nil {
+		return
+	}
 	debug.Println("pingHandler stopping")
 	select {
 	case <-p.stop:
