@@ -139,7 +139,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		default:
 			close(c.stop)
 		}
-		c.PingHandler.Stop()
 		c.Conn.Close()
 	}
 	if c.Conn == nil {
@@ -306,13 +305,19 @@ func (c *Client) Incoming() {
 						Properties: &packets.Properties{},
 						PacketID:   pb.PacketID,
 					}
-					pa.WriteTo(c.Conn)
+					_, err := pa.WriteTo(c.Conn)
+					if err != nil {
+						errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
+					}
 				case 2:
 					pr := packets.Pubrec{
 						Properties: &packets.Properties{},
 						PacketID:   pb.PacketID,
 					}
-					pr.WriteTo(c.Conn)
+					_, err := pr.WriteTo(c.Conn)
+					if err != nil {
+						errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
+					}
 				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 				debug.Println("received packet with id", recv.PacketID())
@@ -329,7 +334,10 @@ func (c *Client) Incoming() {
 						PacketID:   recv.Content.(*packets.Pubrec).PacketID,
 						ReasonCode: 0x92,
 					}
-					pl.WriteTo(c.Conn)
+					_, err := pl.WriteTo(c.Conn)
+					if err != nil {
+						errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
+					}
 				} else {
 					pr := recv.Content.(*packets.Pubrec)
 					if pr.ReasonCode >= 0x80 {
@@ -339,7 +347,10 @@ func (c *Client) Incoming() {
 						pl := packets.Pubrel{
 							PacketID: pr.PacketID,
 						}
-						pl.WriteTo(c.Conn)
+						_, err := pl.WriteTo(c.Conn)
+						if err != nil {
+							errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
+						}
 					}
 				}
 			case packets.PUBREL:
@@ -352,7 +363,10 @@ func (c *Client) Incoming() {
 					pc := packets.Pubcomp{
 						PacketID: pr.PacketID,
 					}
-					pc.WriteTo(c.Conn)
+					_, err := pc.WriteTo(c.Conn)
+					if err != nil {
+						errors.Printf("failed to send PUBCOMP for %d: %s", pc.PacketID, err)
+					}
 				}
 			case packets.DISCONNECT:
 				if c.raCtx != nil {
