@@ -72,7 +72,10 @@ func main() {
 		fmt.Println("signal received, exiting")
 		if c != nil {
 			d := &paho.Disconnect{ReasonCode: 0}
-			c.Disconnect(d)
+			err := c.Disconnect(d)
+			if err != nil {
+				log.Fatalf("failed to send Disconnect: %s", err)
+			}
 		}
 		os.Exit(0)
 	}()

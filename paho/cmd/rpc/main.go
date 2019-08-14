@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/eclipse/paho.golang/paho/extensions/rpc"
@@ -73,13 +74,16 @@ func listener(server, rTopic, username, password string) {
 				}
 
 				body, _ := json.Marshal(resp)
-				c.Publish(context.Background(), &paho.Publish{
+				_, err := c.Publish(context.Background(), &paho.Publish{
 					Properties: &paho.PublishProperties{
 						CorrelationData: m.Properties.CorrelationData,
 					},
 					Topic:   m.Properties.ResponseTopic,
 					Payload: body,
 				})
+				if err != nil {
+					log.Fatalf("failed to publish message: %s", err)
+				}
 			}
 		})
 
@@ -108,15 +112,19 @@ func listener(server, rTopic, username, password string) {
 
 		fmt.Printf("Connected to %s\n", server)
 
-		c.Subscribe(context.Background(), &paho.Subscribe{
+		_, err = c.Subscribe(context.Background(), &paho.Subscribe{
 			Subscriptions: map[string]paho.SubscribeOptions{
 				rTopic: paho.SubscribeOptions{QoS: 0},
 			},
 		})
+		if err != nil {
+			log.Fatalf("failed to subscribe: %s", err)
+		}
 
 		v.Done()
 
 		for {
+			time.Sleep(1 * time.Second)
 		}
 	}()
 
