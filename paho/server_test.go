@@ -45,8 +45,10 @@ func (t *testServer) SetResponse(pt packets.PacketType, p packets.Packet) {
 	t.responses[pt] = p
 }
 
-func (t *testServer) SendPacket(p packets.Packet) {
-	p.WriteTo(t.conn)
+func (t *testServer) SendPacket(p packets.Packet) error {
+	_, err := p.WriteTo(t.conn)
+
+	return err
 }
 
 func (t *testServer) Stop() {

@@ -22,7 +22,10 @@ func main() {
 	password := flag.String("password", "", "Password to match username")
 	flag.Parse()
 
-	paho.SetDebugLogger(log.New(os.Stderr, "SUB: ", log.LstdFlags))
+	logger := log.New(os.Stdout, "SUB: ", log.LstdFlags)
+
+	paho.SetDebugLogger(logger)
+	paho.SetErrorLogger(logger)
 	msgChan := make(chan *paho.Publish)
 
 	conn, err := net.Dial("tcp", *server)
