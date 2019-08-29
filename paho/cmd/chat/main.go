@@ -22,7 +22,7 @@ func main() {
 	server := flag.String("server", "127.0.0.1:1883", "The full URL of the MQTT server to connect to")
 	topic := flag.String("topic", hostname, "Topic to publish and receive the messages on")
 	qos := flag.Int("qos", 0, "The QoS to send the messages at")
-	//name := flag.String("chatname", hostname, "The name to attach to your messages")
+	name := flag.String("chatname", hostname, "The name to attach to your messages")
 	clientid := flag.String("clientid", "", "A clientid for the connection")
 	username := flag.String("username", "", "A username to authenticate to the MQTT server")
 	password := flag.String("password", "", "Password to match username")
@@ -101,9 +101,9 @@ func main() {
 			QoS:     byte(*qos),
 			Payload: []byte(message),
 			Properties: &paho.PublishProperties{
-				ResponseTopic:   "my/response/topic",
-				CorrelationData: []byte("<random stored string>"),
-				ContentType:     "application/json",
+				User: map[string]string{
+					"chatname": *name,
+				},
 			},
 		}
 

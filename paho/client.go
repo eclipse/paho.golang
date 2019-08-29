@@ -607,7 +607,7 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 		return c.publishQoS12(ctx, pb)
 	}
 
-	return nil, fmt.Errorf("oops")
+	return nil, fmt.Errorf("QoS isn't 0, 1 or 2")
 }
 
 func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*PublishResponse, error) {

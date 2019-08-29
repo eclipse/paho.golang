@@ -88,7 +88,9 @@ func main() {
 			Retain:  *retained,
 			Payload: []byte(message),
 		}); err != nil {
-			log.Println(err)
+			log.Println("error sending message:", err)
+			continue
 		}
+		log.Println("sent")
 	}
 }
