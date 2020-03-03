@@ -3,6 +3,7 @@ package paho
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"strings"
 	"sync"
@@ -10,13 +11,6 @@ import (
 
 	"github.com/eclipse/paho.golang/packets"
 	"golang.org/x/sync/semaphore"
-)
-
-type MQTTVersion byte
-
-const (
-	MQTTv311 MQTTVersion = 4
-	MQTTv5   MQTTVersion = 5
 )
 
 type (
@@ -37,14 +31,16 @@ type (
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
-		sync.Mutex
 		ClientConfig
 		// caCtx is used for synchronously handling the connect/connack
 		// flow, raCtx is used for handling the MQTTv5 authentication
 		// exchange.
+
+		mu             sync.Mutex
 		caCtx          *caContext
 		raCtx          *CPContext
 		stop           chan struct{}
+		writeq         chan io.WriterTo
 		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
@@ -98,6 +94,8 @@ func NewClient(conf ClientConfig) *Client {
 			MaximumPacketSize: 0,
 			TopicAliasMaximum: 0,
 		},
+		stop:         make(chan struct{}),
+		writeq:       make(chan io.WriterTo),
 		ClientConfig: conf,
 	}
 
@@ -145,11 +143,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		return nil, fmt.Errorf("client connection is nil")
 	}
 
-	c.stop = make(chan struct{})
-
 	debug.Println("connecting")
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	keepalive := cp.KeepAlive
 	c.ClientID = cp.ClientID
@@ -168,11 +164,18 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		}
 	}
 
-	debug.Println("starting Incoming")
+	debug.Println("starting writer")
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
-		c.Incoming()
+		c.writer()
+	}()
+
+	debug.Println("starting reader")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		c.reader()
 	}()
 
 	connCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
@@ -188,7 +191,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	ccp.ProtocolVersion = 5
 
 	debug.Println("sending CONNECT")
-	if _, err := ccp.WriteTo(c.Conn); err != nil {
+	if err := c.write(ctx, ccp); err != nil {
 		cleanup()
 		return nil, err
 	}
@@ -197,11 +200,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	var cap *packets.Connack
 	select {
 	case <-connCtx.Done():
-		if e := connCtx.Err(); e == context.DeadlineExceeded {
-			debug.Println("timeout waiting for CONNACK")
-			cleanup()
-			return nil, e
-		}
+		debug.Println("waiting for CONNACK canceled")
+		cleanup()
+		return nil, connCtx.Err()
 	case cap = <-c.caCtx.Return:
 	}
 
@@ -255,127 +256,169 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	return ca, nil
 }
 
-// Incoming is the Client function that reads and handles incoming
+func (c *Client) IsAlive() bool {
+	select {
+	case <-c.stop:
+		return false
+	default:
+		return true
+	}
+}
+
+func (c *Client) Done() <-chan struct{} {
+	return c.stop
+}
+
+var ErrStopped = fmt.Errorf("client stopped")
+
+func (c *Client) write(ctx context.Context, w io.WriterTo) error {
+	select {
+	case <-c.stop:
+		return ErrStopped
+	case c.writeq <- w:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (c *Client) writer() {
+	for {
+		var w io.WriterTo
+		select {
+		case <-c.stop:
+			debug.Println("client stopping, writer stopping")
+			return
+		case w = <-c.writeq:
+		}
+		_, err := w.WriteTo(c.Conn)
+		if err != nil {
+			c.Error(fmt.Errorf("write packet error: %w", err))
+			return
+		}
+	}
+}
+
+// reader is the Client function that reads and handles incoming
 // packets from the server. The function is started as a goroutine
 // from Connect(), it exits when it receives a server initiated
 // Disconnect, the Stop channel is closed or there is an error reading
 // a packet from the network connection
-func (c *Client) Incoming() {
+func (c *Client) reader() {
+	ctx := context.Background()
 	for {
 		select {
 		case <-c.stop:
-			debug.Println("client stopping, Incoming stopping")
+			debug.Println("client stopping, reader stopping")
 			return
 		default:
-			recv, err := packets.ReadPacket(c.Conn)
-			if err != nil {
-				c.Error(err)
-				return
+		}
+
+		recv, err := packets.ReadPacket(c.Conn)
+		if err != nil {
+			c.Error(err)
+			return
+		}
+
+		switch recv.Type {
+		case packets.CONNACK:
+			cap := recv.Content.(*packets.Connack)
+			if c.caCtx != nil {
+				c.caCtx.Return <- cap
 			}
-			switch recv.Type {
-			case packets.CONNACK:
-				cap := recv.Content.(*packets.Connack)
-				if c.caCtx != nil {
-					c.caCtx.Return <- cap
+		case packets.AUTH:
+			ap := recv.Content.(*packets.Auth)
+			switch ap.ReasonCode {
+			case 0x0:
+				if c.AuthHandler != nil {
+					go c.AuthHandler.Authenticated()
 				}
-			case packets.AUTH:
-				ap := recv.Content.(*packets.Auth)
-				switch ap.ReasonCode {
-				case 0x0:
-					if c.AuthHandler != nil {
-						go c.AuthHandler.Authenticated()
-					}
-					if c.raCtx != nil {
-						c.raCtx.Return <- *recv
-					}
-				case 0x18:
-					if c.AuthHandler != nil {
-						if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
-							c.Error(err)
-							return
-						}
-					}
-				}
-			case packets.PUBLISH:
-				pb := recv.Content.(*packets.Publish)
-				go c.Router.Route(pb)
-				switch pb.QoS {
-				case 1:
-					pa := packets.Puback{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					_, err := pa.WriteTo(c.Conn)
-					if err != nil {
-						errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
-					}
-				case 2:
-					pr := packets.Pubrec{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					_, err := pr.WriteTo(c.Conn)
-					if err != nil {
-						errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
-					}
-				}
-			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
-				debug.Println("received packet with id", recv.PacketID())
-				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
-					cpCtx.Return <- *recv
-				} else {
-					debug.Println("received a response for a message ID we don't know:", recv.PacketID())
-				}
-			case packets.PUBREC:
-				debug.Println("received pubrec")
-				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
-					debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
-					pl := packets.Pubrel{
-						PacketID:   recv.Content.(*packets.Pubrec).PacketID,
-						ReasonCode: 0x92,
-					}
-					_, err := pl.WriteTo(c.Conn)
-					if err != nil {
-						errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
-					}
-				} else {
-					pr := recv.Content.(*packets.Pubrec)
-					if pr.ReasonCode >= 0x80 {
-						//Received a failure code, shortcut and return
-						cpCtx.Return <- *recv
-					} else {
-						pl := packets.Pubrel{
-							PacketID: pr.PacketID,
-						}
-						_, err := pl.WriteTo(c.Conn)
-						if err != nil {
-							errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
-						}
-					}
-				}
-			case packets.PUBREL:
-				//Auto respond to pubrels unless failure code
-				pr := recv.Content.(*packets.Pubrel)
-				if pr.ReasonCode < 0x80 {
-					//Received a failure code, continue
-					continue
-				} else {
-					pc := packets.Pubcomp{
-						PacketID: pr.PacketID,
-					}
-					_, err := pc.WriteTo(c.Conn)
-					if err != nil {
-						errors.Printf("failed to send PUBCOMP for %d: %s", pc.PacketID, err)
-					}
-				}
-			case packets.DISCONNECT:
 				if c.raCtx != nil {
 					c.raCtx.Return <- *recv
 				}
-				c.Error(fmt.Errorf("received server initiated disconnect"))
-				if c.OnDisconnect != nil {
-					go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
+			case 0x18:
+				if c.AuthHandler != nil {
+					pkt := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet()
+					if err := c.write(ctx, pkt); err != nil {
+						c.Error(err)
+						return
+					}
 				}
+			}
+		case packets.PUBLISH:
+			pb := recv.Content.(*packets.Publish)
+			go c.Router.Route(pb)
+			switch pb.QoS {
+			case 1:
+				pa := packets.Puback{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				if err := c.write(ctx, &pa); err != nil {
+					errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
+				}
+			case 2:
+				pr := packets.Pubrec{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				if err := c.write(ctx, &pr); err != nil {
+					errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
+				}
+			}
+		case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
+			debug.Println("received packet with id", recv.PacketID())
+			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
+				cpCtx.Return <- *recv
+			} else {
+				debug.Println("received a response for a message ID we don't know:", recv.PacketID())
+			}
+		case packets.PUBREC:
+			debug.Println("received pubrec")
+			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
+				debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
+				pl := packets.Pubrel{
+					PacketID:   recv.Content.(*packets.Pubrec).PacketID,
+					ReasonCode: 0x92,
+				}
+				if err := c.write(ctx, &pl); err != nil {
+					errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
+				}
+			} else {
+				pr := recv.Content.(*packets.Pubrec)
+				if pr.ReasonCode >= 0x80 {
+					//Received a failure code, shortcut and return
+					cpCtx.Return <- *recv
+				} else {
+					pl := packets.Pubrel{
+						PacketID: pr.PacketID,
+					}
+					if err := c.write(ctx, &pl); err != nil {
+						errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
+					}
+				}
+			}
+		case packets.PUBREL:
+			//Auto respond to pubrels unless failure code
+			pr := recv.Content.(*packets.Pubrel)
+			if pr.ReasonCode < 0x80 {
+				//Received a failure code, continue
+				continue
+			} else {
+				pc := packets.Pubcomp{
+					PacketID: pr.PacketID,
+				}
+				if err := c.write(ctx, &pc); err != nil {
+					errors.Printf("failed to send PUBCOMP for %d: %s", pc.PacketID, err)
+				}
+			}
+		case packets.DISCONNECT:
+			if c.raCtx != nil {
+				c.raCtx.Return <- *recv
+			}
+			c.Error(fmt.Errorf("received server initiated disconnect"))
+			if c.OnDisconnect != nil {
+				go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
 			}
 		}
 	}
@@ -387,7 +430,7 @@ func (c *Client) Incoming() {
 // It also closes the client network connection.
 func (c *Client) Error(e error) {
 	debug.Println("error called:", e)
-	c.Lock()
+	c.mu.Lock()
 	select {
 	case <-c.stop:
 		//already shutting down, do nothing
@@ -396,7 +439,7 @@ func (c *Client) Error(e error) {
 	}
 	c.PingHandler.Stop()
 	c.Conn.Close()
-	c.Unlock()
+	c.mu.Unlock()
 }
 
 // Authenticate is used to initiate a reauthentication of credentials with the
@@ -406,8 +449,8 @@ func (c *Client) Error(e error) {
 // is received.
 func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, error) {
 	debug.Println("client initiated reauthentication")
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
 	c.raCtx = &CPContext{ctx, make(chan packets.ControlPacket, 1)}
 	defer func() {
@@ -415,7 +458,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	}()
 
 	debug.Println("sending AUTH")
-	if _, err := a.Packet().WriteTo(c.Conn); err != nil {
+	if err := c.write(ctx, a.Packet()); err != nil {
 		return nil, err
 	}
 
@@ -472,10 +515,9 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	cpCtx := &CPContext{subCtx, make(chan packets.ControlPacket, 1)}
 
 	sp := s.Packet()
-
 	sp.PacketID = c.MIDs.Request(cpCtx)
 	debug.Println("sending SUBSCRIBE")
-	if _, err := sp.WriteTo(c.Conn); err != nil {
+	if err := c.write(ctx, sp); err != nil {
 		return nil, err
 	}
 	debug.Println("waiting for SUBACK")
@@ -529,10 +571,9 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	cpCtx := &CPContext{unsubCtx, make(chan packets.ControlPacket, 1)}
 
 	up := u.Packet()
-
 	up.PacketID = c.MIDs.Request(cpCtx)
 	debug.Println("sending UNSUBSCRIBE")
-	if _, err := up.WriteTo(c.Conn); err != nil {
+	if err := c.write(ctx, up); err != nil {
 		return nil, err
 	}
 	debug.Println("waiting for UNSUBACK")
@@ -595,11 +636,10 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 	debug.Printf("sending message to %s", p.Topic)
 
 	pb := p.Packet()
-
 	switch p.QoS {
 	case 0:
 		debug.Println("sending QoS0 message")
-		if _, err := pb.WriteTo(c.Conn); err != nil {
+		if err := c.write(ctx, pb); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -620,7 +660,7 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
 
 	pb.PacketID = c.MIDs.Request(cpCtx)
-	if _, err := pb.WriteTo(c.Conn); err != nil {
+	if err := c.write(ctx, pb); err != nil {
 		return nil, err
 	}
 	var resp packets.ControlPacket
@@ -673,13 +713,10 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 // Whether or not the attempt to send the Disconnect packet fails
 // (and if it does this function returns any error) the network connection
 // is closed.
-func (c *Client) Disconnect(d *Disconnect) error {
+func (c *Client) Disconnect(ctx context.Context, d *Disconnect) error {
 	debug.Println("disconnecting")
-	c.Lock()
-	defer c.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	defer c.Conn.Close()
-
-	_, err := d.Packet().WriteTo(c.Conn)
-
-	return err
+	return c.write(ctx, d.Packet())
 }
