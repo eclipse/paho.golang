@@ -32,6 +32,43 @@ const (
 	AUTH
 )
 
+func (p PacketType) String() string {
+	switch p {
+	case CONNECT:
+		return "CONNECT"
+	case CONNACK:
+		return "CONNACK"
+	case PUBLISH:
+		return "PUBLISH"
+	case PUBACK:
+		return "PUBACK"
+	case PUBREC:
+		return "PUBREC"
+	case PUBREL:
+		return "PUBREL"
+	case PUBCOMP:
+		return "PUBCOMP"
+	case SUBSCRIBE:
+		return "SUBSCRIBE"
+	case SUBACK:
+		return "SUBACK"
+	case UNSUBSCRIBE:
+		return "UNSUBSCRIBE"
+	case UNSUBACK:
+		return "UNSUBACK"
+	case PINGREQ:
+		return "PINGREQ"
+	case PINGRESP:
+		return "PINGRESP"
+	case DISCONNECT:
+		return "DISCONNECT"
+	case AUTH:
+		return "AUTH"
+	default:
+		return "<UNKNOWN>"
+	}
+}
+
 type (
 	// Packet is the interface defining the unique parts of a controlpacket
 	Packet interface {
