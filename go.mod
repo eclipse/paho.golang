@@ -1,4 +1,4 @@
-module github.com/eclipse/paho.golang
+module github.com/netdata/paho.golang
 
 require (
 	github.com/stretchr/testify v1.3.0
