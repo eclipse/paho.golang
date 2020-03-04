@@ -9,8 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/eclipse/paho.golang/packets"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/netdata/paho.golang/packets"
 )
 
 type (

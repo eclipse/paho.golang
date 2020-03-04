@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/netdata/paho.golang/packets"
 )
 
 const (
