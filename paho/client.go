@@ -427,8 +427,7 @@ func (c *Client) reader() {
 func (c *Client) pinger(d time.Duration) {
 	var (
 		ctx   = context.Background()
-		freq  = d / 2
-		timer = time.NewTimer(freq)
+		timer = time.NewTimer(d)
 		ping  = packets.NewControlPacket(packets.PINGREQ)
 
 		lastPing time.Time
@@ -458,7 +457,7 @@ func (c *Client) pinger(d time.Duration) {
 		if lastPing.IsZero() {
 			lastPing = now
 		}
-		timer.Reset(freq)
+		timer.Reset(d)
 	}
 }
 
