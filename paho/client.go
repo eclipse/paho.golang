@@ -175,10 +175,8 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 		connCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
 		defer cf()
+
 		c.caCtx = &caContext{connCtx, make(chan *packets.Connack, 1)}
-		defer func() {
-			c.caCtx = nil
-		}()
 
 		ccp := cp.Packet()
 		ccp.ProtocolName = "MQTT"
