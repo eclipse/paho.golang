@@ -42,8 +42,8 @@ type (
 		// raCtx is used for handling the MQTTv5 authentication exchange.
 
 		connectOnce sync.Once
-		ca          *Connack
-		cerr        error
+		ca          *Connack // connection ack.
+		cerr        error    // connection error.
 
 		mu             sync.Mutex
 		closed         bool
