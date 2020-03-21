@@ -14,7 +14,11 @@ import (
 	"github.com/netdata/paho.golang/packets"
 )
 
-var DefaultKeepAlive = 60 * time.Second
+var (
+	DefaultKeepAlive       = 60 * time.Second
+	DefaultShutdownTimeout = 10 * time.Second
+	DefaultPacketTimeout   = 10 * time.Second
+)
 
 type (
 	// ClientConfig are the user configurable options for the client, an
@@ -22,14 +26,14 @@ type (
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PacketTimeout and Router.
 	ClientConfig struct {
-		Conn          net.Conn
-		MIDs          MIDService
-		AuthHandler   Auther
-		Router        Router
-		Persistence   Persistence
-		PacketTimeout time.Duration
-		OnDisconnect  func(*Disconnect)
-		OnClose       func()
+		Conn            net.Conn
+		MIDs            MIDService
+		AuthHandler     Auther
+		Router          Router
+		Persistence     Persistence
+		PacketTimeout   time.Duration
+		ShutdownTimeout time.Duration
+		OnClose         func()
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -121,7 +125,10 @@ func NewClient(conf ClientConfig) *Client {
 		c.MIDs = &MIDs{index: make(map[uint16]*CPContext)}
 	}
 	if c.PacketTimeout == 0 {
-		c.PacketTimeout = 10 * time.Second
+		c.PacketTimeout = DefaultPacketTimeout
+	}
+	if c.ShutdownTimeout == 0 {
+		c.ShutdownTimeout = DefaultShutdownTimeout
 	}
 	if c.Router == nil {
 		c.Router = NewStandardRouter()
@@ -270,6 +277,8 @@ func (c *Client) close() {
 	}
 	c.closed = true
 	go func() {
+		debug.Println("closing")
+
 		close(c.exit)
 		<-c.writerDone
 		<-c.pingerDone
@@ -282,6 +291,19 @@ func (c *Client) close() {
 			c.OnClose()
 		}
 	}()
+}
+
+func (c *Client) Shutdown(ctx context.Context) {
+	c.waitConnected()
+	debug.Println("sending DISCONNECT")
+	err := c.write(ctx, packets.NewControlPacket(packets.DISCONNECT))
+	if err == nil {
+		select {
+		case <-c.readerDone:
+		case <-time.After(c.ShutdownTimeout):
+		}
+	}
+	c.Close()
 }
 
 func (c *Client) Close() {
@@ -340,6 +362,8 @@ func (c *Client) reader() {
 	for {
 		recv, err := packets.ReadPacket(c.Conn)
 		if err == io.EOF {
+			debug.Println("server closed the connection:", err)
+			c.close()
 			return
 		}
 		if err != nil {
@@ -453,13 +477,14 @@ func (c *Client) reader() {
 				}
 			}
 		case packets.DISCONNECT:
-			if c.raCtx != nil {
-				c.raCtx.Return <- *recv
+			c.mu.Lock()
+			raCtx := c.raCtx
+			c.mu.Unlock()
+			if raCtx != nil {
+				raCtx.Return <- *recv
 			}
 			c.fail(fmt.Errorf("received server initiated disconnect"))
-			if c.OnDisconnect != nil {
-				go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
-			}
+			return
 		}
 	}
 }
