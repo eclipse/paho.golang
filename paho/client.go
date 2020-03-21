@@ -14,7 +14,11 @@ import (
 	"github.com/netdata/paho.golang/packets"
 )
 
-var DefaultKeepAlive = 60 * time.Second
+var (
+	DefaultKeepAlive       = 60 * time.Second
+	DefaultShutdownTimeout = 10 * time.Second
+	DefaultPacketTimeout   = 10 * time.Second
+)
 
 type (
 	// ClientConfig are the user configurable options for the client, an
@@ -22,29 +26,36 @@ type (
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PacketTimeout and Router.
 	ClientConfig struct {
-		ClientID      string
-		Conn          net.Conn
-		MIDs          MIDService
-		AuthHandler   Auther
-		Router        Router
-		Persistence   Persistence
-		PacketTimeout time.Duration
-		OnDisconnect  func(*Disconnect)
+		Conn            net.Conn
+		MIDs            MIDService
+		AuthHandler     Auther
+		Router          Router
+		Persistence     Persistence
+		PacketTimeout   time.Duration
+		ShutdownTimeout time.Duration
+		OnClose         func()
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
 		ClientConfig
-		// caCtx is used for synchronously handling the connect/connack
-		// flow, raCtx is used for handling the MQTTv5 authentication
-		// exchange.
+		// caCtx is used for synchronously handling the connect/connack flow
+		// raCtx is used for handling the MQTTv5 authentication exchange.
+
+		connectOnce sync.Once
+		ca          *Connack // connection ack.
+		cerr        error    // connection error.
 
 		mu             sync.Mutex
+		closed         bool
 		caCtx          *caContext
 		raCtx          *CPContext
-		stop           chan struct{}
+		exit           chan struct{}
+		done           chan struct{}
 		writeq         chan io.WriterTo
+		writerDone     chan struct{}
+		readerDone     chan struct{}
+		pingerDone     chan struct{}
 		pong           chan struct{}
-		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
 		serverInflight *semaphore.Weighted
@@ -97,9 +108,13 @@ func NewClient(conf ClientConfig) *Client {
 			MaximumPacketSize: 0,
 			TopicAliasMaximum: 0,
 		},
-		stop:         make(chan struct{}),
-		pong:         make(chan struct{}, 1),
+		exit:         make(chan struct{}),
+		done:         make(chan struct{}),
 		writeq:       make(chan io.WriterTo),
+		writerDone:   make(chan struct{}),
+		readerDone:   make(chan struct{}),
+		pingerDone:   make(chan struct{}),
+		pong:         make(chan struct{}, 1),
 		ClientConfig: conf,
 	}
 
@@ -110,7 +125,10 @@ func NewClient(conf ClientConfig) *Client {
 		c.MIDs = &MIDs{index: make(map[uint16]*CPContext)}
 	}
 	if c.PacketTimeout == 0 {
-		c.PacketTimeout = 10 * time.Second
+		c.PacketTimeout = DefaultPacketTimeout
+	}
+	if c.ShutdownTimeout == 0 {
+		c.ShutdownTimeout = DefaultShutdownTimeout
 	}
 	if c.Router == nil {
 		c.Router = NewStandardRouter()
@@ -127,154 +145,180 @@ func NewClient(conf ClientConfig) *Client {
 // returned. Otherwise the failure Connack (if there is one) is returned
 // along with an error indicating the reason for the failure to connect.
 func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
-	cleanup := func() {
-		select {
-		case <-c.stop:
-			//already shutting down, do nothing
-		default:
-			close(c.stop)
-		}
-		c.Conn.Close()
-	}
 	if c.Conn == nil {
 		return nil, fmt.Errorf("client connection is nil")
 	}
+	c.connectOnce.Do(func() {
+		debug.Println("connecting")
 
-	debug.Println("connecting")
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	keepalive := cp.KeepAlive
-	if keepalive == 0 {
-		keepalive = uint16(DefaultKeepAlive / time.Second)
-	}
-	c.ClientID = cp.ClientID
-	if cp.Properties != nil {
-		if cp.Properties.MaximumPacketSize != nil {
-			c.clientProps.MaximumPacketSize = *cp.Properties.MaximumPacketSize
+		keepalive := cp.KeepAlive
+		if keepalive == 0 {
+			keepalive = uint16(DefaultKeepAlive / time.Second)
 		}
-		if cp.Properties.MaximumQOS != nil {
-			c.clientProps.MaximumQoS = *cp.Properties.MaximumQOS
+		if cp.Properties != nil {
+			if cp.Properties.MaximumPacketSize != nil {
+				c.clientProps.MaximumPacketSize = *cp.Properties.MaximumPacketSize
+			}
+			if cp.Properties.MaximumQOS != nil {
+				c.clientProps.MaximumQoS = *cp.Properties.MaximumQOS
+			}
+			if cp.Properties.ReceiveMaximum != nil {
+				c.clientProps.ReceiveMaximum = *cp.Properties.ReceiveMaximum
+			}
+			if cp.Properties.TopicAliasMaximum != nil {
+				c.clientProps.TopicAliasMaximum = *cp.Properties.TopicAliasMaximum
+			}
 		}
-		if cp.Properties.ReceiveMaximum != nil {
-			c.clientProps.ReceiveMaximum = *cp.Properties.ReceiveMaximum
+
+		go c.writer()
+		go c.reader()
+
+		connCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
+		defer cf()
+
+		c.caCtx = &caContext{connCtx, make(chan *packets.Connack, 1)}
+
+		ccp := cp.Packet()
+		ccp.ProtocolName = "MQTT"
+		ccp.ProtocolVersion = 5
+
+		debug.Println("sending CONNECT")
+		if c.cerr = c.write(ctx, ccp); c.cerr != nil {
+			return
 		}
-		if cp.Properties.TopicAliasMaximum != nil {
-			c.clientProps.TopicAliasMaximum = *cp.Properties.TopicAliasMaximum
+
+		debug.Println("waiting for CONNACK")
+		var cap *packets.Connack
+		select {
+		case <-connCtx.Done():
+			debug.Println("waiting for CONNACK canceled")
+			c.cerr = connCtx.Err()
+			return
+
+		case cap = <-c.caCtx.Return:
+			debug.Println("received CONNACK")
 		}
-	}
 
-	debug.Println("starting writer")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		c.writer()
-	}()
+		ca := ConnackFromPacketConnack(cap)
 
-	debug.Println("starting reader")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		c.reader()
-	}()
+		if ca.ReasonCode >= 0x80 {
+			var reason string
+			debug.Println("received an error code in Connack:", ca.ReasonCode)
+			if ca.Properties != nil {
+				reason = ca.Properties.ReasonString
+			}
+			c.cerr = fmt.Errorf("failed to connect to server: %s", reason)
+			return
+		}
 
-	connCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
-	defer cf()
-	c.caCtx = &caContext{connCtx, make(chan *packets.Connack, 1)}
-	defer func() {
-		c.caCtx = nil
-	}()
-
-	ccp := cp.Packet()
-
-	ccp.ProtocolName = "MQTT"
-	ccp.ProtocolVersion = 5
-
-	debug.Println("sending CONNECT")
-	if err := c.write(ctx, ccp); err != nil {
-		cleanup()
-		return nil, err
-	}
-
-	debug.Println("waiting for CONNACK")
-	var cap *packets.Connack
-	select {
-	case <-connCtx.Done():
-		debug.Println("waiting for CONNACK canceled")
-		cleanup()
-		return nil, connCtx.Err()
-	case cap = <-c.caCtx.Return:
-	}
-
-	ca := ConnackFromPacketConnack(cap)
-
-	if ca.ReasonCode >= 0x80 {
-		var reason string
-		debug.Println("received an error code in Connack:", ca.ReasonCode)
 		if ca.Properties != nil {
-			reason = ca.Properties.ReasonString
+			if ca.Properties.ServerKeepAlive != nil {
+				keepalive = *ca.Properties.ServerKeepAlive
+			}
+			//if ca.Properties.AssignedClientID != "" {
+			//	c.ClientID = ca.Properties.AssignedClientID
+			//}
+			if ca.Properties.ReceiveMaximum != nil {
+				c.serverProps.ReceiveMaximum = *ca.Properties.ReceiveMaximum
+			}
+			if ca.Properties.MaximumQoS != nil {
+				c.serverProps.MaximumQoS = *ca.Properties.MaximumQoS
+			}
+			if ca.Properties.MaximumPacketSize != nil {
+				c.serverProps.MaximumPacketSize = *ca.Properties.MaximumPacketSize
+			}
+			if ca.Properties.TopicAliasMaximum != nil {
+				c.serverProps.TopicAliasMaximum = *ca.Properties.TopicAliasMaximum
+			}
+			c.serverProps.RetainAvailable = ca.Properties.RetainAvailable
+			c.serverProps.WildcardSubAvailable = ca.Properties.WildcardSubAvailable
+			c.serverProps.SubIDAvailable = ca.Properties.SubIDAvailable
+			c.serverProps.SharedSubAvailable = ca.Properties.SharedSubAvailable
 		}
-		cleanup()
-		return ca, fmt.Errorf("failed to connect to server: %s", reason)
+
+		c.ca = ca
+		c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
+		c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
+
+		go c.pinger(time.Duration(keepalive) * time.Second)
+	})
+	return c.ca, c.cerr
+}
+
+func (c *Client) waitConnected() {
+	var dummy bool
+	c.connectOnce.Do(func() {
+		dummy = true
+	})
+	if dummy {
+		panic("calling method on Client without Connect() call")
 	}
-
-	if ca.Properties != nil {
-		if ca.Properties.ServerKeepAlive != nil {
-			keepalive = *ca.Properties.ServerKeepAlive
-		}
-		if ca.Properties.AssignedClientID != "" {
-			c.ClientID = ca.Properties.AssignedClientID
-		}
-		if ca.Properties.ReceiveMaximum != nil {
-			c.serverProps.ReceiveMaximum = *ca.Properties.ReceiveMaximum
-		}
-		if ca.Properties.MaximumQoS != nil {
-			c.serverProps.MaximumQoS = *ca.Properties.MaximumQoS
-		}
-		if ca.Properties.MaximumPacketSize != nil {
-			c.serverProps.MaximumPacketSize = *ca.Properties.MaximumPacketSize
-		}
-		if ca.Properties.TopicAliasMaximum != nil {
-			c.serverProps.TopicAliasMaximum = *ca.Properties.TopicAliasMaximum
-		}
-		c.serverProps.RetainAvailable = ca.Properties.RetainAvailable
-		c.serverProps.WildcardSubAvailable = ca.Properties.WildcardSubAvailable
-		c.serverProps.SubIDAvailable = ca.Properties.SubIDAvailable
-		c.serverProps.SharedSubAvailable = ca.Properties.SharedSubAvailable
-	}
-
-	c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
-	c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
-
-	debug.Println("received CONNACK, starting pinger")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		c.pinger(time.Duration(keepalive) * time.Second)
-	}()
-
-	return ca, nil
 }
 
 func (c *Client) IsAlive() bool {
-	select {
-	case <-c.stop:
-		return false
-	default:
-		return true
-	}
+	c.waitConnected()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return !c.closed
 }
 
 func (c *Client) Done() <-chan struct{} {
-	return c.stop
+	c.waitConnected()
+	return c.done
 }
 
-var ErrStopped = fmt.Errorf("client stopped")
+func (c *Client) close() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return
+	}
+	c.closed = true
+	go func() {
+		debug.Println("closing")
+
+		close(c.exit)
+		<-c.writerDone
+		<-c.pingerDone
+
+		c.Conn.Close()
+		<-c.readerDone
+		close(c.done)
+
+		if c.OnClose != nil {
+			c.OnClose()
+		}
+	}()
+}
+
+func (c *Client) Shutdown(ctx context.Context) {
+	c.waitConnected()
+	debug.Println("sending DISCONNECT")
+	err := c.write(ctx, packets.NewControlPacket(packets.DISCONNECT))
+	if err == nil {
+		select {
+		case <-c.readerDone:
+		case <-time.After(c.ShutdownTimeout):
+		}
+	}
+	c.Close()
+}
+
+func (c *Client) Close() {
+	c.waitConnected()
+	c.close()
+	<-c.done
+}
+
+var (
+	ErrClosed       = fmt.Errorf("client closed")
+	ErrNotConnected = fmt.Errorf("client is not connected")
+)
 
 func (c *Client) write(ctx context.Context, w io.WriterTo) error {
 	select {
-	case <-c.stop:
-		return ErrStopped
+	case <-c.exit:
+		return ErrClosed
 	case c.writeq <- w:
 		return nil
 	case <-ctx.Done():
@@ -283,17 +327,20 @@ func (c *Client) write(ctx context.Context, w io.WriterTo) error {
 }
 
 func (c *Client) writer() {
+	defer func() {
+		debug.Println("writer stopped")
+		close(c.writerDone)
+	}()
 	for {
 		var w io.WriterTo
 		select {
-		case <-c.stop:
-			debug.Println("client stopping, writer stopping")
+		case <-c.exit:
 			return
 		case w = <-c.writeq:
 		}
 		_, err := w.WriteTo(c.Conn)
 		if err != nil {
-			c.Error(fmt.Errorf("write packet error: %w", err))
+			c.fail(fmt.Errorf("write packet error: %w", err))
 			return
 		}
 	}
@@ -302,14 +349,23 @@ func (c *Client) writer() {
 // reader is the Client function that reads and handles incoming
 // packets from the server. The function is started as a goroutine
 // from Connect(), it exits when it receives a server initiated
-// Disconnect, the Stop channel is closed or there is an error reading
+// Disconnect, the Stop channel is  or there is an error reading
 // a packet from the network connection
 func (c *Client) reader() {
+	defer func() {
+		debug.Println("reader stopped")
+		close(c.readerDone)
+	}()
 	ctx := context.Background()
 	for {
 		recv, err := packets.ReadPacket(c.Conn)
+		if err == io.EOF {
+			debug.Println("server closed the connection:", err)
+			c.close()
+			return
+		}
 		if err != nil {
-			c.Error(err)
+			c.fail(err)
 			return
 		}
 		debug.Println("received packet", recv.Type)
@@ -317,12 +373,15 @@ func (c *Client) reader() {
 		switch recv.Type {
 		case packets.PINGRESP:
 			select {
-			case <-c.stop:
+			case <-c.pingerDone:
+				// Pinger don't need anything no more.
 			case c.pong <- struct{}{}:
 			}
 
 		case packets.CONNACK:
 			cap := recv.Content.(*packets.Connack)
+			// NOTE: No need to acquire a lock for caCtx beacuse its never
+			// change.
 			if c.caCtx != nil {
 				c.caCtx.Return <- cap
 			}
@@ -333,14 +392,17 @@ func (c *Client) reader() {
 				if c.AuthHandler != nil {
 					go c.AuthHandler.Authenticated()
 				}
-				if c.raCtx != nil {
-					c.raCtx.Return <- *recv
+				c.mu.Lock()
+				raCtx := c.raCtx
+				c.mu.Unlock()
+				if raCtx != nil {
+					raCtx.Return <- *recv
 				}
 			case 0x18:
 				if c.AuthHandler != nil {
 					pkt := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet()
 					if err := c.write(ctx, pkt); err != nil {
-						c.Error(err)
+						c.fail(err)
 						return
 					}
 				}
@@ -413,18 +475,23 @@ func (c *Client) reader() {
 				}
 			}
 		case packets.DISCONNECT:
-			if c.raCtx != nil {
-				c.raCtx.Return <- *recv
+			c.mu.Lock()
+			raCtx := c.raCtx
+			c.mu.Unlock()
+			if raCtx != nil {
+				raCtx.Return <- *recv
 			}
-			c.Error(fmt.Errorf("received server initiated disconnect"))
-			if c.OnDisconnect != nil {
-				go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
-			}
+			c.fail(fmt.Errorf("received server initiated disconnect"))
+			return
 		}
 	}
 }
 
 func (c *Client) pinger(d time.Duration) {
+	defer func() {
+		debug.Println("pinger stopped")
+		close(c.pingerDone)
+	}()
 	var (
 		ctx   = context.Background()
 		timer = time.NewTimer(d)
@@ -435,7 +502,8 @@ func (c *Client) pinger(d time.Duration) {
 	)
 	for {
 		select {
-		case <-c.stop:
+		case <-c.exit:
+			timer.Stop()
 			return
 
 		case <-c.pong:
@@ -446,7 +514,7 @@ func (c *Client) pinger(d time.Duration) {
 			// Time to ping.
 		}
 		if !lastPing.IsZero() && now.Sub(lastPing) > 2*d {
-			c.Error(fmt.Errorf("no pong for %s", now.Sub(lastPing)))
+			c.fail(fmt.Errorf("no pong for %s", now.Sub(lastPing)))
 			return
 		}
 		debug.Println("sending PINGREQ")
@@ -461,21 +529,9 @@ func (c *Client) pinger(d time.Duration) {
 	}
 }
 
-// Error is called to signify that an error situation has occurred, this
-// causes the client's Stop channel to be closed (if it hasn't already been)
-// which results in the other client goroutines terminating.
-// It also closes the client network connection.
-func (c *Client) Error(e error) {
-	debug.Println("error called:", e)
-	c.mu.Lock()
-	select {
-	case <-c.stop:
-		//already shutting down, do nothing
-	default:
-		close(c.stop)
-	}
-	c.Conn.Close()
-	c.mu.Unlock()
+func (c *Client) fail(e error) {
+	debug.Println("client failed:", e)
+	c.close()
 }
 
 // Authenticate is used to initiate a reauthentication of credentials with the
@@ -484,13 +540,22 @@ func (c *Client) Error(e error) {
 // server until either a successful Auth packet is passed back, or a Disconnect
 // is received.
 func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, error) {
+	c.waitConnected()
 	debug.Println("client initiated reauthentication")
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
-	c.raCtx = &CPContext{ctx, make(chan packets.ControlPacket, 1)}
+	raCtx := &CPContext{ctx, make(chan packets.ControlPacket, 1)}
+
+	c.mu.Lock()
+	if c.raCtx != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("previous auth is still in progress")
+	}
+	c.raCtx = raCtx
+	c.mu.Unlock()
 	defer func() {
+		c.mu.Lock()
 		c.raCtx = nil
+		c.mu.Unlock()
 	}()
 
 	debug.Println("sending AUTH")
@@ -505,7 +570,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 			debug.Println("timeout waiting for Auth to complete")
 			return nil, e
 		}
-	case rp = <-c.raCtx.Return:
+	case rp = <-raCtx.Return:
 	}
 
 	switch rp.Type {
@@ -525,6 +590,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 // a response Suback, or for the timeout to fire. Any response Suback
 // is returned from the function, along with any errors.
 func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
+	c.waitConnected()
 	if !c.serverProps.WildcardSubAvailable {
 		for t := range s.Subscriptions {
 			if strings.ContainsAny(t, "#+") {
@@ -601,6 +667,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 // a response Unsuback, or for the timeout to fire. Any response Unsuback
 // is returned from the function, along with any errors.
 func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, error) {
+	c.waitConnected()
 	debug.Printf("unsubscribing from %+v", u.Topics)
 	unsubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
 	defer cf()
@@ -657,6 +724,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 // the appropriate response, or for the timeout to fire.
 // Any response message is returned from the function, along with any errors.
 func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, error) {
+	c.waitConnected()
 	if p.QoS > c.serverProps.MaximumQoS {
 		return nil, fmt.Errorf("cannot send Publish with QoS %d, server maximum QoS is %d", p.QoS, c.serverProps.MaximumQoS)
 	}
@@ -748,11 +816,9 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 // Disconnect is used to send a Disconnect packet to the MQTT server
 // Whether or not the attempt to send the Disconnect packet fails
 // (and if it does this function returns any error) the network connection
-// is closed.
+// is .
 func (c *Client) Disconnect(ctx context.Context, d *Disconnect) error {
-	debug.Println("disconnecting")
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	defer c.Conn.Close()
+	c.waitConnected()
+	debug.Println("sending DISCONNECT")
 	return c.write(ctx, d.Packet())
 }
