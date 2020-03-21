@@ -150,6 +150,11 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 	c.connectOnce.Do(func() {
 		debug.Println("connecting")
+		defer func() {
+			if c.cerr != nil {
+				c.close()
+			}
+		}()
 
 		keepalive := cp.KeepAlive
 		if keepalive == 0 {
@@ -200,6 +205,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		}
 
 		ca := ConnackFromPacketConnack(cap)
+		c.ca = ca
 
 		if ca.ReasonCode >= 0x80 {
 			var reason string
@@ -236,7 +242,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 			c.serverProps.SharedSubAvailable = ca.Properties.SharedSubAvailable
 		}
 
-		c.ca = ca
 		c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
 		c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
 
@@ -277,6 +282,8 @@ func (c *Client) close() {
 	go func() {
 		debug.Println("closing")
 
+		c.waitConnected()
+
 		close(c.exit)
 		<-c.writerDone
 		<-c.pingerDone
@@ -285,7 +292,9 @@ func (c *Client) close() {
 		<-c.readerDone
 		close(c.done)
 
-		if c.OnClose != nil {
+		if c.cerr == nil && c.OnClose != nil {
+			// Call OnClose() only when initial connection was successful (and
+			// callback provided).
 			c.OnClose()
 		}
 	}()
