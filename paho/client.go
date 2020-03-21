@@ -14,17 +14,18 @@ import (
 	"github.com/netdata/paho.golang/packets"
 )
 
+var DefaultKeepAlive = 60 * time.Second
+
 type (
 	// ClientConfig are the user configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options
 	// are required to be set, defaults are provided for Persistence, MIDs,
-	// PingHandler, PacketTimeout and Router.
+	// PacketTimeout and Router.
 	ClientConfig struct {
 		ClientID      string
 		Conn          net.Conn
 		MIDs          MIDService
 		AuthHandler   Auther
-		PingHandler   Pinger
 		Router        Router
 		Persistence   Persistence
 		PacketTimeout time.Duration
@@ -42,6 +43,7 @@ type (
 		raCtx          *CPContext
 		stop           chan struct{}
 		writeq         chan io.WriterTo
+		pong           chan struct{}
 		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
@@ -71,7 +73,7 @@ type (
 
 // NewClient is used to create a new default instance of an MQTT client.
 // It returns a pointer to the new client instance.
-// The default client uses the provided PingHandler, MessageID and
+// The default client uses the provided MessageID and
 // StandardRouter implementations, and a noop Persistence.
 // These should be replaced if desired before the client is connected.
 // client.Conn *MUST* be set to an already connected net.Conn before
@@ -96,6 +98,7 @@ func NewClient(conf ClientConfig) *Client {
 			TopicAliasMaximum: 0,
 		},
 		stop:         make(chan struct{}),
+		pong:         make(chan struct{}, 1),
 		writeq:       make(chan io.WriterTo),
 		ClientConfig: conf,
 	}
@@ -111,13 +114,6 @@ func NewClient(conf ClientConfig) *Client {
 	}
 	if c.Router == nil {
 		c.Router = NewStandardRouter()
-	}
-	if c.PingHandler == nil {
-		c.PingHandler = &PingHandler{
-			pingFailHandler: func(e error) {
-				c.Error(e)
-			},
-		}
 	}
 
 	return c
@@ -149,6 +145,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	defer c.mu.Unlock()
 
 	keepalive := cp.KeepAlive
+	if keepalive == 0 {
+		keepalive = uint16(DefaultKeepAlive / time.Second)
+	}
 	c.ClientID = cp.ClientID
 	if cp.Properties != nil {
 		if cp.Properties.MaximumPacketSize != nil {
@@ -247,11 +246,11 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
 	c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
 
-	debug.Println("received CONNACK, starting PingHandler")
+	debug.Println("received CONNACK, starting pinger")
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
-		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
+		c.pinger(time.Duration(keepalive) * time.Second)
 	}()
 
 	return ca, nil
@@ -308,20 +307,20 @@ func (c *Client) writer() {
 func (c *Client) reader() {
 	ctx := context.Background()
 	for {
-		select {
-		case <-c.stop:
-			debug.Println("client stopping, reader stopping")
-			return
-		default:
-		}
-
 		recv, err := packets.ReadPacket(c.Conn)
 		if err != nil {
 			c.Error(err)
 			return
 		}
+		debug.Println("received packet", recv.Type)
 
 		switch recv.Type {
+		case packets.PINGRESP:
+			select {
+			case <-c.stop:
+			case c.pong <- struct{}{}:
+			}
+
 		case packets.CONNACK:
 			cap := recv.Content.(*packets.Connack)
 			if c.caCtx != nil {
@@ -425,6 +424,44 @@ func (c *Client) reader() {
 	}
 }
 
+func (c *Client) pinger(d time.Duration) {
+	var (
+		ctx   = context.Background()
+		freq  = d / 2
+		timer = time.NewTimer(freq)
+		ping  = packets.NewControlPacket(packets.PINGREQ)
+
+		lastPing time.Time
+		now      time.Time
+	)
+	for {
+		select {
+		case <-c.stop:
+			return
+
+		case <-c.pong:
+			lastPing = time.Time{}
+			continue
+
+		case now = <-timer.C:
+			// Time to ping.
+		}
+		if !lastPing.IsZero() && now.Sub(lastPing) > 2*d {
+			c.Error(fmt.Errorf("no pong for %s", now.Sub(lastPing)))
+			return
+		}
+		debug.Println("sending PINGREQ")
+		if err := c.write(ctx, ping); err != nil {
+			errors.Printf("failed to sent PINGREQ: %v", err)
+			continue
+		}
+		if lastPing.IsZero() {
+			lastPing = now
+		}
+		timer.Reset(freq)
+	}
+}
+
 // Error is called to signify that an error situation has occurred, this
 // causes the client's Stop channel to be closed (if it hasn't already been)
 // which results in the other client goroutines terminating.
@@ -438,7 +475,6 @@ func (c *Client) Error(e error) {
 	default:
 		close(c.stop)
 	}
-	c.PingHandler.Stop()
 	c.Conn.Close()
 	c.mu.Unlock()
 }
