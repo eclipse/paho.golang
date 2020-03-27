@@ -75,6 +75,11 @@ func (t *testServer) Run() {
 					if _, err := p.WriteTo(t.conn); err != nil {
 						log.Println(err)
 					}
+				} else {
+					p := packets.NewControlPacket(packets.CONNACK)
+					if _, err := p.WriteTo(t.conn); err != nil {
+						log.Println(err)
+					}
 				}
 			case packets.SUBSCRIBE:
 				log.Println("received subscribe", recv.Content.(*packets.Subscribe))

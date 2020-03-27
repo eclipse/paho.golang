@@ -45,27 +45,22 @@ func NewStandardRouter() *StandardRouter {
 // RegisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
-	debug.Println("Registering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
-
 	r.subscriptions[topic] = append(r.subscriptions[topic], h)
 }
 
 // UnregisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) UnregisterHandler(topic string) {
-	debug.Println("Unregistering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
-
 	delete(r.subscriptions, topic)
 }
 
 // Route is the library provided StandardRouter's implementation
 // of the required interface function()
 func (r *StandardRouter) Route(pb *packets.Publish) {
-	debug.Println("Routing message for:", pb.Topic)
 	r.RLock()
 	defer r.RUnlock()
 
