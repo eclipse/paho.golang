@@ -193,7 +193,14 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		var cap *packets.Connack
 		select {
 		case <-connCtx.Done():
-			c.cerr = connCtx.Err()
+			c.traceDebug("timeout waiting for CONNACK")
+			if ctx.Err() != nil {
+				// Parent context has been canceled.
+				// So return the raw context error.
+				c.cerr = ctx.Err()
+			} else {
+				c.cerr = ErrTimeout
+			}
 			return
 		case cap = <-c.caCtx.Return:
 		}
@@ -312,8 +319,9 @@ func (c *Client) Close() {
 }
 
 var (
-	ErrClosed       = fmt.Errorf("client closed")
-	ErrNotConnected = fmt.Errorf("client is not connected")
+	ErrClosed       = fmt.Errorf("paho: client closed")
+	ErrTimeout      = fmt.Errorf("paho: request timeout")
+	ErrNotConnected = fmt.Errorf("paho: client is not connected")
 )
 
 func (c *Client) write(ctx context.Context, w io.WriterTo) (err error) {
@@ -559,7 +567,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	select {
 	case <-ctx.Done():
 		if e := ctx.Err(); e == context.DeadlineExceeded {
-			c.traceDebug("timeout waiting for Auth to complete")
+			c.traceDebug("timeout waiting for auth to complete")
 			return nil, e
 		}
 	case rp = <-raCtx.Return:
@@ -618,9 +626,13 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 	select {
 	case <-subCtx.Done():
-		if e := subCtx.Err(); e == context.DeadlineExceeded {
-			c.traceDebug("timeout waiting for SUBACK")
-			return nil, e
+		c.traceDebug("timeout waiting for SUBACK")
+		if ctx.Err() != nil {
+			// Parent context has been canceled.
+			// So return the raw context error.
+			return nil, ctx.Err()
+		} else {
+			return nil, ErrTimeout
 		}
 	case sap = <-cpCtx.Return:
 	}
@@ -679,9 +691,13 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 	select {
 	case <-unsubCtx.Done():
-		if e := unsubCtx.Err(); e == context.DeadlineExceeded {
-			c.traceDebug("timeout waiting for UNSUBACK")
-			return nil, e
+		c.traceDebug("timeout waiting for UNSUBACK")
+		if ctx.Err() != nil {
+			// Parent context has been canceled.
+			// So return the raw context error.
+			return nil, ctx.Err()
+		} else {
+			return nil, ErrTimeout
 		}
 	case uap = <-cpCtx.Return:
 	}
@@ -770,9 +786,13 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 
 	select {
 	case <-pubCtx.Done():
-		if e := pubCtx.Err(); e == context.DeadlineExceeded {
-			c.traceDebug("timeout waiting for Publish response")
-			return nil, e
+		c.traceDebug("timeout waiting for publish response")
+		if ctx.Err() != nil {
+			// Parent context has been canceled.
+			// So return the raw context error.
+			return nil, ctx.Err()
+		} else {
+			return nil, ErrTimeout
 		}
 	case resp = <-cpCtx.Return:
 	}
