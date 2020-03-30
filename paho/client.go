@@ -202,6 +202,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 				c.cerr = ErrTimeout
 			}
 			return
+		case <-c.exit:
+			c.cerr = ErrClosed
+			return
 		case cap = <-c.caCtx.Return:
 		}
 
@@ -570,6 +573,8 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 			c.traceDebug("timeout waiting for auth to complete")
 			return nil, e
 		}
+	case <-c.exit:
+		return nil, ErrClosed
 	case rp = <-raCtx.Return:
 	}
 
@@ -634,6 +639,8 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		} else {
 			return nil, ErrTimeout
 		}
+	case <-c.exit:
+		return nil, ErrClosed
 	case sap = <-cpCtx.Return:
 	}
 
@@ -699,6 +706,8 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 		} else {
 			return nil, ErrTimeout
 		}
+	case <-c.exit:
+		return nil, ErrClosed
 	case uap = <-cpCtx.Return:
 	}
 
@@ -794,6 +803,8 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 		} else {
 			return nil, ErrTimeout
 		}
+	case <-c.exit:
+		return nil, ErrClosed
 	case resp = <-cpCtx.Return:
 	}
 
