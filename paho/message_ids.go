@@ -41,7 +41,8 @@ type CPContext struct {
 // to messages with a messageid
 type MIDs struct {
 	sync.Mutex
-	index map[uint16]*CPContext
+	index  map[uint16]*CPContext
+	lastID uint16
 }
 
 // Request is the library provided MIDService's implementation of
@@ -49,12 +50,19 @@ type MIDs struct {
 func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := uint16(1); i < 65535; i++ {
+
+	for i, n := m.lastID, 0; n < 65535; i, n = i+1, n+1 {
+		if i == 0 {
+			i = 1
+		}
+
 		if _, ok := m.index[i]; !ok {
 			m.index[i] = c
+			m.lastID = i
 			return i, nil
 		}
 	}
+
 	return 0, ErrNoMoreIDs
 }
 
