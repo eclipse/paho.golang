@@ -634,8 +634,14 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	cpCtx := &CPContext{subCtx, make(chan packets.ControlPacket, 1)}
 
 	sp := s.Packet()
-	sp.PacketID = c.MIDs.Request(cpCtx)
-	if err := c.write(ctx, sp); err != nil {
+	var err error
+	sp.PacketID, err = c.MIDs.Request(cpCtx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.write(ctx, sp); err != nil {
 		return nil, err
 	}
 	c.log(LevelTrace, "waiting for SUBACK")
@@ -701,8 +707,14 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	cpCtx := &CPContext{unsubCtx, make(chan packets.ControlPacket, 1)}
 
 	up := u.Packet()
-	up.PacketID = c.MIDs.Request(cpCtx)
-	if err := c.write(ctx, up); err != nil {
+	var err error
+	up.PacketID, err = c.MIDs.Request(cpCtx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if err = c.write(ctx, up); err != nil {
 		return nil, err
 	}
 	c.log(LevelTrace, "waiting for UNSUBACK")
@@ -799,7 +811,11 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (_ *Publ
 	defer cf()
 
 	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
-	pb.PacketID = c.MIDs.Request(cpCtx)
+
+	pb.PacketID, err = c.MIDs.Request(cpCtx)
+	if err != nil {
+		return nil, err
+	}
 
 	t := c.tracePublish(pb)
 	defer func() {

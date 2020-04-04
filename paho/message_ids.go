@@ -2,15 +2,14 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/netdata/paho.golang/packets"
 )
 
-const (
-	midMin uint16 = 1
-	midMax uint16 = 65535
-)
+// ErrNoMoreIDs is an error returned when there are no more available packet IDs.
+var ErrNoMoreIDs = errors.New("no more packet ids available.")
 
 // MIDService defines the interface for a struct that handles the
 // relationship between message ids and CPContexts
@@ -22,7 +21,7 @@ const (
 // to mark that messageid as available for reuse
 // Clear() resets the internal state of the MIDService
 type MIDService interface {
-	Request(*CPContext) uint16
+	Request(*CPContext) (uint16, error)
 	Get(uint16) *CPContext
 	Free(uint16)
 	Clear()
@@ -47,16 +46,16 @@ type MIDs struct {
 
 // Request is the library provided MIDService's implementation of
 // the required interface function()
-func (m *MIDs) Request(c *CPContext) uint16 {
+func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := midMin; i < midMax; i++ {
+	for i := uint16(1); i < 65535; i++ {
 		if _, ok := m.index[i]; !ok {
 			m.index[i] = c
-			return i
+			return i, nil
 		}
 	}
-	return 0
+	return 0, ErrNoMoreIDs
 }
 
 // Get is the library provided MIDService's implementation of
