@@ -442,7 +442,9 @@ func (c *Client) reader() {
 				_ = c.write(ctx, &pr)
 			}
 		case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
+
 			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
+				c.MIDs.Free(recv.PacketID())
 				cpCtx.Return <- *recv
 			} else {
 				c.log(LevelWarn,
@@ -469,6 +471,7 @@ func (c *Client) reader() {
 				pr := recv.Content.(*packets.Pubrec)
 				if pr.ReasonCode >= 0x80 {
 					//Received a failure code, shortcut and return
+					c.MIDs.Free(recv.PacketID())
 					cpCtx.Return <- *recv
 				} else {
 					pl := packets.Pubrel{
