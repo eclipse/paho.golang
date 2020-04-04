@@ -58,7 +58,7 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 
 		if _, ok := m.index[i]; !ok {
 			m.index[i] = c
-			m.lastID = 1
+			m.lastID = i
 			return i, nil
 		}
 	}
