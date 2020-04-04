@@ -53,18 +53,38 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 
 	if m.lastIdUsed < 65535 {
 		m.lastIdUsed++
-		return m.lastIdUsed, nil
+	} else {
+		m.lastIdUsed = 1
 	}
 
-	for i := uint16(1); i < 65535; i++ {
-		if _, ok := m.index[i]; !ok {
-			m.index[i] = c
-			m.lastIdUsed = i
-			return i, nil
-		}
+	i := m.lastIdUsed
+	if _, ok := m.index[i]; !ok {
+		m.index[i] = c
+		return i, nil
+	}
+
+	i = m.getNextId(i)
+	if i > 0 {
+		m.index[i] = c
+		m.lastIdUsed = i
+		return i, nil
 	}
 
 	return 0, ErrNoMoreIDs
+}
+
+func (m *MIDs) getNextId(startFrom uint16) uint16 {
+	if startFrom > 65535 {
+		startFrom = 1
+	}
+
+	for i := startFrom; i < 65535; i++ {
+		if _, ok := m.index[i]; !ok {
+			return i
+		}
+	}
+
+	return 0
 }
 
 // Get is the library provided MIDService's implementation of
