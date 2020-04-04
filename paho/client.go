@@ -34,6 +34,7 @@ type (
 		PacketTimeout   time.Duration
 		ShutdownTimeout time.Duration
 		Trace           Trace
+		Logger          func(LogEntry)
 		OnClose         func()
 	}
 	// Client is the struct representing an MQTT client
@@ -193,7 +194,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		var cap *packets.Connack
 		select {
 		case <-connCtx.Done():
-			c.traceDebug("timeout waiting for CONNACK")
+			c.log(LevelTrace, "timeout waiting for CONNACK")
 			if ctx.Err() != nil {
 				// Parent context has been canceled.
 				// So return the raw context error.
@@ -283,7 +284,7 @@ func (c *Client) close() {
 	}
 	c.closed = true
 	go func() {
-		c.traceDebug("closing")
+		c.log(LevelDebug, "closing")
 
 		c.waitConnected()
 
@@ -344,7 +345,7 @@ func (c *Client) write(ctx context.Context, w io.WriterTo) (err error) {
 
 func (c *Client) writer() {
 	defer func() {
-		c.traceDebug("writer stopped")
+		c.log(LevelDebug, "writer stopped")
 		close(c.writerDone)
 	}()
 	for {
@@ -369,7 +370,7 @@ func (c *Client) writer() {
 // a packet from the network connection
 func (c *Client) reader() {
 	defer func() {
-		c.traceDebug("reader stopped")
+		c.log(LevelDebug, "reader stopped")
 		close(c.readerDone)
 	}()
 	ctx := context.Background()
@@ -444,11 +445,21 @@ func (c *Client) reader() {
 			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
 				cpCtx.Return <- *recv
 			} else {
-				c.traceDebug("received a response for a message ID we don't know")
+				c.log(LevelWarn,
+					"received a response for a message ID we don't know",
+					func(e *LogEntry) {
+						e.ControlPacket = recv
+					},
+				)
 			}
 		case packets.PUBREC:
 			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
-				c.traceDebug("received a response for a message ID we don't know")
+				c.log(LevelWarn,
+					"received a response for a message ID we don't know",
+					func(e *LogEntry) {
+						e.ControlPacket = recv
+					},
+				)
 				pl := packets.Pubrel{
 					PacketID:   recv.Content.(*packets.Pubrec).PacketID,
 					ReasonCode: 0x92,
@@ -493,7 +504,7 @@ func (c *Client) reader() {
 
 func (c *Client) pinger(d time.Duration) {
 	defer func() {
-		c.traceDebug("pinger stopped")
+		c.log(LevelDebug, "pinger stopped")
 		close(c.pingerDone)
 	}()
 	var (
@@ -531,9 +542,9 @@ func (c *Client) pinger(d time.Duration) {
 	}
 }
 
-func (c *Client) fail(e error) {
-	c.traceDebug("client failed", func(t *DebugTrace) {
-		t.Error = e
+func (c *Client) fail(err error) {
+	c.log(LevelError, "client failed", func(e *LogEntry) {
+		e.Error = err
 	})
 	c.close()
 }
@@ -545,7 +556,7 @@ func (c *Client) fail(e error) {
 // is received.
 func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, error) {
 	c.waitConnected()
-	c.traceDebug("client initiated reauthentication")
+	c.log(LevelTrace, "client initiated reauthentication")
 
 	raCtx := &CPContext{ctx, make(chan packets.ControlPacket, 1)}
 
@@ -569,10 +580,8 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	var rp packets.ControlPacket
 	select {
 	case <-ctx.Done():
-		if e := ctx.Err(); e == context.DeadlineExceeded {
-			c.traceDebug("timeout waiting for auth to complete")
-			return nil, e
-		}
+		c.log(LevelTrace, "timeout waiting for auth to complete")
+		return nil, ctx.Err()
 	case <-c.exit:
 		return nil, ErrClosed
 	case rp = <-raCtx.Return:
@@ -615,7 +624,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		}
 	}
 
-	c.traceDebug(fmt.Sprintf("subscribing to %+v", s.Subscriptions))
+	c.log(LevelTrace, fmt.Sprintf("subscribing to %+v", s.Subscriptions))
 
 	subCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
 	defer cf()
@@ -626,12 +635,12 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	if err := c.write(ctx, sp); err != nil {
 		return nil, err
 	}
-	c.traceDebug("waiting for SUBACK")
+	c.log(LevelTrace, "waiting for SUBACK")
 	var sap packets.ControlPacket
 
 	select {
 	case <-subCtx.Done():
-		c.traceDebug("timeout waiting for SUBACK")
+		c.log(LevelTrace, "timeout waiting for SUBACK")
 		if ctx.Err() != nil {
 			// Parent context has been canceled.
 			// So return the raw context error.
@@ -653,7 +662,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	case len(sa.Reasons) == 1:
 		if sa.Reasons[0] >= 0x80 {
 			var reason string
-			c.traceDebug(fmt.Sprintf(
+			c.log(LevelDebug, fmt.Sprintf(
 				"received an error code in Suback: %v", sa.Reasons[0],
 			))
 			if sa.Properties != nil {
@@ -664,7 +673,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	default:
 		for _, code := range sa.Reasons {
 			if code >= 0x80 {
-				c.traceDebug(fmt.Sprintf(
+				c.log(LevelDebug, fmt.Sprintf(
 					"received an error code in Suback: %v", code,
 				))
 				return sa, fmt.Errorf("at least one requested subscription failed")
@@ -681,7 +690,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 // is returned from the function, along with any errors.
 func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, error) {
 	c.waitConnected()
-	c.traceDebug(fmt.Sprintf(
+	c.log(LevelTrace, fmt.Sprintf(
 		"unsubscribing from %+v", u.Topics,
 	))
 	unsubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
@@ -693,12 +702,12 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	if err := c.write(ctx, up); err != nil {
 		return nil, err
 	}
-	c.traceDebug("waiting for UNSUBACK")
+	c.log(LevelTrace, "waiting for UNSUBACK")
 	var uap packets.ControlPacket
 
 	select {
 	case <-unsubCtx.Done():
-		c.traceDebug("timeout waiting for UNSUBACK")
+		c.log(LevelTrace, "timeout waiting for UNSUBACK")
 		if ctx.Err() != nil {
 			// Parent context has been canceled.
 			// So return the raw context error.
@@ -720,7 +729,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	case len(ua.Reasons) == 1:
 		if ua.Reasons[0] >= 0x80 {
 			var reason string
-			c.traceDebug(fmt.Sprintf(
+			c.log(LevelDebug, fmt.Sprintf(
 				"received an error code in Unsuback: %v", ua.Reasons[0],
 			))
 			if ua.Properties != nil {
@@ -731,7 +740,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	default:
 		for _, code := range ua.Reasons {
 			if code >= 0x80 {
-				c.traceDebug(fmt.Sprintf(
+				c.log(LevelDebug, fmt.Sprintf(
 					"received an error code in Unsuback: %v", code,
 				))
 				return ua, fmt.Errorf("at least one requested unsubscribe failed")
@@ -761,17 +770,9 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (_ *PublishResponse, e
 	}
 
 	pb := p.Packet()
-	t := c.tracePublish(pb)
-	defer func() {
-		t.done(err)
-	}()
-
 	switch p.QoS {
 	case 0:
-		if err := c.write(ctx, pb); err != nil {
-			return nil, err
-		}
-		return nil, nil
+		return c.publishQoS0(ctx, pb)
 	case 1, 2:
 		return c.publishQoS12(ctx, pb)
 	}
@@ -779,23 +780,40 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (_ *PublishResponse, e
 	return nil, fmt.Errorf("oops")
 }
 
-func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*PublishResponse, error) {
-	pubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
-	defer cf()
-	if err := c.serverInflight.Acquire(pubCtx, 1); err != nil {
-		return nil, err
-	}
-	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
-
-	pb.PacketID = c.MIDs.Request(cpCtx)
+func (c *Client) publishQoS0(ctx context.Context, pb *packets.Publish) (_ *PublishResponse, err error) {
+	t := c.tracePublish(pb)
+	defer func() {
+		t.done(err)
+	}()
 	if err := c.write(ctx, pb); err != nil {
 		return nil, err
 	}
-	var resp packets.ControlPacket
+	return nil, nil
+}
 
+func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (_ *PublishResponse, err error) {
+	pubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
+	defer cf()
+
+	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
+	pb.PacketID = c.MIDs.Request(cpCtx)
+
+	t := c.tracePublish(pb)
+	defer func() {
+		t.done(err)
+	}()
+
+	if err := c.serverInflight.Acquire(pubCtx, 1); err != nil {
+		return nil, err
+	}
+	if err := c.write(ctx, pb); err != nil {
+		return nil, err
+	}
+
+	var resp packets.ControlPacket
 	select {
 	case <-pubCtx.Done():
-		c.traceDebug("timeout waiting for publish response")
+		c.log(LevelTrace, "timeout waiting for publish response")
 		if ctx.Err() != nil {
 			// Parent context has been canceled.
 			// So return the raw context error.

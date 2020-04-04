@@ -8,7 +8,6 @@ type Trace struct {
 	OnSend    func(*SendStartTrace)
 	OnRecv    func(*RecvStartTrace)
 	OnPublish func(*PublishStartTrace)
-	OnDebug   func(DebugTrace)
 }
 
 type PublishStartTrace struct {
@@ -70,25 +69,6 @@ func (t *RecvStartTrace) done(x interface{}, err error) {
 		PacketType: matchPacketType(x),
 		Error:      err,
 	})
-}
-
-type DebugTrace struct {
-	Message string
-	Error   error
-}
-
-func (c *Client) traceDebug(msg string, opts ...func(*DebugTrace)) {
-	fn := c.Trace.OnDebug
-	if fn == nil {
-		return
-	}
-	t := DebugTrace{
-		Message: msg,
-	}
-	for _, opt := range opts {
-		opt(&t)
-	}
-	fn(t)
 }
 
 type SendStartTrace struct {
