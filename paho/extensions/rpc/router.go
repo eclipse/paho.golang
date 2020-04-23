@@ -1,15 +1,16 @@
-package paho
+package rpc
 
 import (
 	"strings"
 	"sync"
 
 	"github.com/netdata/paho.golang/packets"
+	"github.com/netdata/paho.golang/paho"
 )
 
 // MessageHandler is a type for a function that is invoked
 // by a Router when it has received a Publish.
-type MessageHandler func(*Publish)
+type MessageHandler func(*paho.Publish)
 
 // Router is an interface of the functions for a struct that is
 // used to handle invoking MessageHandlers depending on the
@@ -21,9 +22,10 @@ type MessageHandler func(*Publish)
 // Route() takes a Publish message and determines which MessageHandlers
 // should be invoked
 type Router interface {
+	paho.Router
+
 	RegisterHandler(string, MessageHandler)
 	UnregisterHandler(string)
-	Route(*packets.Publish)
 }
 
 // StandardRouter is a library provided implementation of a Router that
@@ -177,4 +179,18 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 		}
 	}
 	s.handler(m)
+}
+
+// PublishFromPacketPublish takes a packets library Publish and
+// returns a paho library Publish
+func PublishFromPacketPublish(p *packets.Publish) *paho.Publish {
+	v := &paho.Publish{
+		QoS:     p.QoS,
+		Retain:  p.Retain,
+		Topic:   p.Topic,
+		Payload: p.Payload,
+	}
+	v.InitProperties(p.Properties)
+
+	return v
 }

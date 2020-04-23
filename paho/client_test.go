@@ -18,7 +18,6 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, c)
 	require.NotNil(t, c.Persistence)
 	require.NotNil(t, c.MIDs)
-	require.NotNil(t, c.Router)
 
 	assert.Equal(t, uint16(65535), c.serverProps.ReceiveMaximum)
 	assert.Equal(t, uint8(2), c.serverProps.MaximumQoS)
@@ -240,7 +239,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: RouterFunc(func(p *packets.Publish) {
 			assert.Equal(t, "test/0", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(0), p.QoS)
@@ -271,7 +270,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: RouterFunc(func(p *packets.Publish) {
 			assert.Equal(t, "test/1", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(1), p.QoS)
@@ -302,7 +301,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: RouterFunc(func(p *packets.Publish) {
 			assert.Equal(t, "test/2", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(2), p.QoS)

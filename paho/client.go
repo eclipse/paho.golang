@@ -20,6 +20,29 @@ var (
 	DefaultPacketTimeout   = 10 * time.Second
 )
 
+// Router is an interface that capable of handling publish packets.
+//
+// NOTE: its a Router responsibility to deal with concurrent packets processing
+// (if needed).
+type Router interface {
+	Route(*packets.Publish)
+}
+
+// RouterFunc is an adapter to allow the use of ordinary functions as Router.
+type RouterFunc func(*packets.Publish)
+
+// Route implements Router interface.
+func (f RouterFunc) Route(p *packets.Publish) {
+	f(p)
+}
+
+// Auther is the interface for something that implements the extended
+// authentication flows in MQTT v5.
+type Auther interface {
+	Authenticate(*Auth) *Auth
+	Authenticated()
+}
+
 type (
 	// ClientConfig are the user configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options
@@ -130,9 +153,6 @@ func NewClient(conf ClientConfig) *Client {
 	}
 	if c.ShutdownTimeout == 0 {
 		c.ShutdownTimeout = DefaultShutdownTimeout
-	}
-	if c.Router == nil {
-		c.Router = NewStandardRouter()
 	}
 
 	return c
@@ -407,7 +427,7 @@ func (c *Client) reader() {
 			switch ap.ReasonCode {
 			case 0x0:
 				if c.AuthHandler != nil {
-					go c.AuthHandler.Authenticated()
+					c.AuthHandler.Authenticated()
 				}
 				c.mu.Lock()
 				raCtx := c.raCtx
@@ -426,7 +446,6 @@ func (c *Client) reader() {
 			}
 		case packets.PUBLISH:
 			pb := recv.Content.(*packets.Publish)
-			go c.Router.Route(pb)
 			switch pb.QoS {
 			case 1:
 				pa := packets.Puback{
@@ -441,6 +460,14 @@ func (c *Client) reader() {
 				}
 				_ = c.write(ctx, &pr)
 			}
+
+			// Its up to Router implementation to decide how it will process
+			// the packet (e.g. starting a new goroutine or block the receive
+			// loop).
+			if c.Router != nil {
+				c.Router.Route(pb)
+			}
+
 		case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 
 			if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {

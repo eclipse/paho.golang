@@ -1,4 +1,4 @@
-package paho
+package rpc
 
 import (
 	"reflect"

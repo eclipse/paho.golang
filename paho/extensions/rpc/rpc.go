@@ -14,20 +14,32 @@ import (
 type Handler struct {
 	sync.Mutex
 	c          *paho.Client
+	clientID   string
 	correlData map[string]chan *paho.Publish
 }
 
-func NewHandler(c *paho.Client) (*Handler, error) {
+func NewHandler(config paho.ClientConfig, clientID string) (*Handler, error) {
+	r, ok := config.Router.(Router)
+	if !ok && config.Router != nil {
+		return nil, fmt.Errorf("config.Router must be nil or implement rpc.Router")
+	}
+	if r == nil {
+		r = NewStandardRouter()
+		config.Router = r
+	}
+
+	c := paho.NewClient(config)
 	h := &Handler{
 		c:          c,
 		correlData: make(map[string]chan *paho.Publish),
+		clientID:   clientID,
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	r.RegisterHandler(fmt.Sprintf("%s/responses", clientID), h.responseHandler)
 
 	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): paho.SubscribeOptions{QoS: 1},
+			fmt.Sprintf("%s/responses", clientID): paho.SubscribeOptions{QoS: 1},
 		},
 	})
 	if err != nil {
@@ -65,7 +77,7 @@ func (h *Handler) Request(pb *paho.Publish) (*paho.Publish, error) {
 	}
 
 	pb.Properties.CorrelationData = []byte(cID)
-	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
+	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.clientID)
 	pb.Retain = false
 
 	_, err := h.c.Publish(context.Background(), pb)

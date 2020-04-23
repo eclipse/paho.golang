@@ -47,20 +47,6 @@ func (p *Publish) InitProperties(prop *packets.Properties) {
 	}
 }
 
-// PublishFromPacketPublish takes a packets library Publish and
-// returns a paho library Publish
-func PublishFromPacketPublish(p *packets.Publish) *Publish {
-	v := &Publish{
-		QoS:     p.QoS,
-		Retain:  p.Retain,
-		Topic:   p.Topic,
-		Payload: p.Payload,
-	}
-	v.InitProperties(p.Properties)
-
-	return v
-}
-
 // Packet returns a packets library Publish from the paho Publish
 // on which it is called
 func (p *Publish) Packet() *packets.Publish {
