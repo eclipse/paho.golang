@@ -133,7 +133,7 @@ type Properties struct {
 
 // Pack takes all the defined properties for an Properties and produces
 // a slice of bytes representing the wire format for the information
-func (i *Properties) Pack(p PacketType) []byte {
+func (i *Properties) Pack(p byte) []byte {
 	var b bytes.Buffer
 
 	if i == nil {
@@ -297,10 +297,174 @@ func (i *Properties) Pack(p PacketType) []byte {
 	return b.Bytes()
 }
 
+func (i *Properties) PackBuf(p byte) *bytes.Buffer {
+	var b bytes.Buffer
+
+	if i == nil {
+		return nil
+	}
+
+	if p == PUBLISH {
+		if i.PayloadFormat != nil {
+			b.WriteByte(PropPayloadFormat)
+			b.WriteByte(*i.PayloadFormat)
+		}
+
+		if i.MessageExpiry != nil {
+			b.WriteByte(PropMessageExpiry)
+			writeUint32(*i.MessageExpiry, &b)
+		}
+
+		if i.ContentType != "" {
+			b.WriteByte(PropContentType)
+			writeString(i.ContentType, &b)
+		}
+
+		if i.ResponseTopic != "" {
+			b.WriteByte(PropResponseTopic)
+			writeString(i.ResponseTopic, &b)
+		}
+
+		if i.CorrelationData != nil && len(i.CorrelationData) > 0 {
+			b.WriteByte(PropCorrelationData)
+			writeBinary(i.CorrelationData, &b)
+		}
+
+		if i.TopicAlias != nil {
+			b.WriteByte(PropTopicAlias)
+			writeUint16(*i.TopicAlias, &b)
+		}
+	}
+
+	if p == PUBLISH || p == SUBSCRIBE {
+		if i.SubscriptionIdentifier != nil {
+			b.WriteByte(PropSubscriptionIdentifier)
+			writeUint32(*i.SubscriptionIdentifier, &b)
+		}
+	}
+
+	if p == CONNECT || p == CONNACK {
+		if i.ReceiveMaximum != nil {
+			b.WriteByte(PropReceiveMaximum)
+			writeUint16(*i.ReceiveMaximum, &b)
+		}
+
+		if i.TopicAliasMaximum != nil {
+			b.WriteByte(PropTopicAliasMaximum)
+			writeUint16(*i.TopicAliasMaximum, &b)
+		}
+
+		if i.MaximumQOS != nil {
+			b.WriteByte(PropMaximumQOS)
+			b.WriteByte(*i.MaximumQOS)
+		}
+
+		if i.MaximumPacketSize != nil {
+			b.WriteByte(PropMaximumPacketSize)
+			writeUint32(*i.MaximumPacketSize, &b)
+		}
+	}
+
+	if p == CONNACK {
+		if i.AssignedClientID != "" {
+			b.WriteByte(PropAssignedClientID)
+			writeString(i.AssignedClientID, &b)
+		}
+
+		if i.ServerKeepAlive != nil {
+			b.WriteByte(PropServerKeepAlive)
+			writeUint16(*i.ServerKeepAlive, &b)
+		}
+
+		if i.WildcardSubAvailable != nil {
+			b.WriteByte(PropWildcardSubAvailable)
+			b.WriteByte(*i.WildcardSubAvailable)
+		}
+
+		if i.SubIDAvailable != nil {
+			b.WriteByte(PropSubIDAvailable)
+			b.WriteByte(*i.SubIDAvailable)
+		}
+
+		if i.SharedSubAvailable != nil {
+			b.WriteByte(PropSharedSubAvailable)
+			b.WriteByte(*i.SharedSubAvailable)
+		}
+
+		if i.RetainAvailable != nil {
+			b.WriteByte(PropRetainAvailable)
+			b.WriteByte(*i.RetainAvailable)
+		}
+
+		if i.ResponseInfo != "" {
+			b.WriteByte(PropResponseInfo)
+			writeString(i.ResponseInfo, &b)
+		}
+	}
+
+	if p == CONNECT {
+		if i.RequestProblemInfo != nil {
+			b.WriteByte(PropRequestProblemInfo)
+			b.WriteByte(*i.RequestProblemInfo)
+		}
+
+		if i.WillDelayInterval != nil {
+			b.WriteByte(PropWillDelayInterval)
+			writeUint32(*i.WillDelayInterval, &b)
+		}
+
+		if i.RequestResponseInfo != nil {
+			b.WriteByte(PropRequestResponseInfo)
+			b.WriteByte(*i.RequestResponseInfo)
+		}
+	}
+
+	if p == CONNECT || p == DISCONNECT {
+		if i.SessionExpiryInterval != nil {
+			b.WriteByte(PropSessionExpiryInterval)
+			writeUint32(*i.SessionExpiryInterval, &b)
+		}
+	}
+
+	if p == CONNECT || p == CONNACK || p == AUTH {
+		if i.AuthMethod != "" {
+			b.WriteByte(PropAuthMethod)
+			writeString(i.AuthMethod, &b)
+		}
+
+		if i.AuthData != nil && len(i.AuthData) > 0 {
+			b.WriteByte(PropAuthData)
+			writeBinary(i.AuthData, &b)
+		}
+	}
+
+	if p == CONNACK || p == DISCONNECT {
+		if i.ServerReference != "" {
+			b.WriteByte(PropServerReference)
+			writeString(i.ServerReference, &b)
+		}
+	}
+
+	if p != CONNECT {
+		if i.ReasonString != "" {
+			b.WriteByte(PropReasonString)
+			writeString(i.ReasonString, &b)
+		}
+	}
+
+	for k, v := range i.User {
+		b.WriteByte(PropUser)
+		writeString(k, &b)
+		writeString(v, &b)
+	}
+
+	return &b
+}
+
 // Unpack takes a buffer of bytes and reads out the defined properties
 // filling in the appropriate entries in the struct, it returns the number
 // of bytes used to store the Prop data and any error in decoding them
-func (i *Properties) Unpack(r *bytes.Buffer, p PacketType) error {
+func (i *Properties) Unpack(r *bytes.Buffer, p byte) error {
 	vbi, err := getVBI(r)
 	if err != nil {
 		return err
@@ -502,7 +666,7 @@ func (i *Properties) Unpack(r *bytes.Buffer, p PacketType) error {
 
 // ValidProperties is a map of the various properties and the
 // PacketTypes that property is valid for.
-var ValidProperties = map[byte]map[PacketType]struct{}{
+var ValidProperties = map[byte]map[byte]struct{}{
 	PropPayloadFormat:          {PUBLISH: {}},
 	PropMessageExpiry:          {PUBLISH: {}},
 	PropContentType:            {PUBLISH: {}},
@@ -535,7 +699,7 @@ var ValidProperties = map[byte]map[PacketType]struct{}{
 // ValidateID takes a PacketType and a property name and returns
 // a boolean indicating if that property is valid for that
 // PacketType
-func ValidateID(p PacketType, i byte) bool {
+func ValidateID(p byte, i byte) bool {
 	_, ok := ValidProperties[i][p]
 	return ok
 }

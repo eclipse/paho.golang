@@ -53,8 +53,8 @@ func (p *Publish) Buffers() net.Buffers {
 		writeUint16(p.PacketID, &b)
 	}
 	idvp := p.Properties.Pack(PUBLISH)
-	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp, p.Payload}
+	encodeVBIdirect(len(idvp), &b)
+	return net.Buffers{b.Bytes(), idvp, p.Payload}
 
 }
 

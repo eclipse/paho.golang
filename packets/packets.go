@@ -9,12 +9,12 @@ import (
 
 // PacketType is a type alias to byte representing the different
 // MQTT control packet types
-type PacketType byte
+// type PacketType byte
 
 // The following consts are the packet type number for each of the
 // different control packets in MQTT
 const (
-	_ PacketType = iota
+	_ byte = iota
 	CONNECT
 	CONNACK
 	PUBLISH
@@ -43,7 +43,7 @@ type (
 	// FixedHeader is the definition of a control packet fixed header
 	FixedHeader struct {
 		remainingLength int
-		Type            PacketType
+		Type            byte
 		Flags           byte
 	}
 
@@ -97,7 +97,7 @@ func (c *ControlPacket) PacketID() uint16 {
 // NewControlPacket takes a packetType and returns a pointer to a
 // ControlPacket where the VariableHeader field is a pointer to an
 // instance of a VariableHeader definition for that packetType
-func NewControlPacket(t PacketType) *ControlPacket {
+func NewControlPacket(t byte) *ControlPacket {
 	cp := &ControlPacket{FixedHeader: FixedHeader{Type: t}}
 	switch t {
 	case CONNECT:
@@ -144,7 +144,6 @@ func NewControlPacket(t PacketType) *ControlPacket {
 	default:
 		return nil
 	}
-
 	return cp
 }
 
@@ -156,10 +155,59 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 	if err != nil {
 		return nil, err
 	}
-	cp := NewControlPacket(PacketType(t[0] >> 4))
-	if cp == nil {
-		return nil, fmt.Errorf("invalid packet type requested, %d", t[0]>>4)
+	// cp := NewControlPacket(PacketType(t[0] >> 4))
+	// if cp == nil {
+	// 	return nil, fmt.Errorf("invalid packet type requested, %d", t[0]>>4)
+	// }
+
+	pt := t[0] >> 4
+	cp := &ControlPacket{FixedHeader: FixedHeader{Type: pt}}
+	switch pt {
+	case CONNECT:
+		cp.Content = &Connect{
+			ProtocolName:    "MQTT",
+			ProtocolVersion: 5,
+			Properties:      &Properties{User: make(map[string]string)},
+		}
+	case CONNACK:
+		cp.Content = &Connack{Properties: &Properties{User: make(map[string]string)}}
+	case PUBLISH:
+		cp.Content = &Publish{Properties: &Properties{User: make(map[string]string)}}
+	case PUBACK:
+		cp.Content = &Puback{Properties: &Properties{User: make(map[string]string)}}
+	case PUBREC:
+		cp.Content = &Pubrec{Properties: &Properties{User: make(map[string]string)}}
+	case PUBREL:
+		cp.Flags = 2
+		cp.Content = &Pubrel{Properties: &Properties{User: make(map[string]string)}}
+	case PUBCOMP:
+		cp.Content = &Pubcomp{Properties: &Properties{User: make(map[string]string)}}
+	case SUBSCRIBE:
+		cp.Flags = 2
+		cp.Content = &Subscribe{
+			Subscriptions: make(map[string]SubOptions),
+			Properties:    &Properties{User: make(map[string]string)},
+		}
+	case SUBACK:
+		cp.Content = &Suback{Properties: &Properties{User: make(map[string]string)}}
+	case UNSUBSCRIBE:
+		cp.Flags = 2
+		cp.Content = &Unsubscribe{Properties: &Properties{User: make(map[string]string)}}
+	case UNSUBACK:
+		cp.Content = &Unsuback{Properties: &Properties{User: make(map[string]string)}}
+	case PINGREQ:
+		cp.Content = &Pingreq{}
+	case PINGRESP:
+		cp.Content = &Pingresp{}
+	case DISCONNECT:
+		cp.Content = &Disconnect{Properties: &Properties{User: make(map[string]string)}}
+	case AUTH:
+		cp.Flags = 1
+		cp.Content = &Auth{Properties: &Properties{User: make(map[string]string)}}
+	default:
+		return nil, fmt.Errorf("unknown packet type %d requested", pt)
 	}
+
 	cp.Flags = t[0] & 0xF
 	if cp.Type == PUBLISH {
 		cp.Content.(*Publish).QoS = (cp.Flags & 0x6) >> 1
@@ -222,6 +270,24 @@ func encodeVBI(length int) []byte {
 		x++
 		if length == 0 {
 			return b[:x]
+		}
+	}
+}
+
+func encodeVBIdirect(length int, buf *bytes.Buffer) {
+	var x int
+	b := [4]byte{}
+	for {
+		digit := byte(length % 128)
+		length /= 128
+		if length > 0 {
+			digit |= 0x80
+		}
+		b[x] = digit
+		x++
+		if length == 0 {
+			buf.Write(b[:x])
+			return
 		}
 	}
 }

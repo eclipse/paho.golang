@@ -147,7 +147,7 @@ func TestReadStringWriteString(t *testing.T) {
 func TestNewControlPacket(t *testing.T) {
 	tests := []struct {
 		name string
-		args PacketType
+		args byte
 		want *ControlPacket
 	}{
 		{
@@ -392,5 +392,33 @@ func TestControlPacket_PacketID(t *testing.T) {
 				t.Errorf("ControlPacket.PacketID() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func BenchmarkConnect_Buffers(b *testing.B) {
+	x := NewControlPacket(CONNECT)
+	x.Content.(*Connect).KeepAlive = 30
+	x.Content.(*Connect).ClientID = "testClient"
+	x.Content.(*Connect).UsernameFlag = true
+	x.Content.(*Connect).Username = "testUser"
+	sExpiryInterval := uint32(30)
+	x.Content.(*Connect).Properties.SessionExpiryInterval = &sExpiryInterval
+	cp := x.Content.(*Connect)
+
+	for n := 0; n < b.N; n++ {
+		cp.Buffers()
+	}
+}
+
+func BenchmarkPublish_Buffers(b *testing.B) {
+	x := NewControlPacket(PUBLISH)
+	x.Content.(*Publish).QoS = 0
+	x.Content.(*Publish).Topic = "testTopic"
+	x.Content.(*Publish).PacketID = uint16(100)
+	x.Content.(*Publish).Payload = []byte("testPayload")
+	pp := x.Content.(*Publish)
+
+	for n := 0; n < b.N; n++ {
+		pp.Buffers()
 	}
 }

@@ -40,7 +40,6 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClientConnect(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "CONNECT: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
@@ -59,6 +58,7 @@ func TestClientConnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "CONNECT: ", log.LstdFlags))
 
 	cp := &Connect{
 		KeepAlive:  30,
@@ -84,7 +84,6 @@ func TestClientConnect(t *testing.T) {
 }
 
 func TestClientSubscribe(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.SUBACK, &packets.Suback{
 		Reasons:    []byte{1, 2, 0},
@@ -97,6 +96,7 @@ func TestClientSubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
 
 	c.stop = make(chan struct{})
 	go c.Incoming()
@@ -104,9 +104,9 @@ func TestClientSubscribe(t *testing.T) {
 
 	s := &Subscribe{
 		Subscriptions: map[string]SubscribeOptions{
-			"test/1": SubscribeOptions{QoS: 1},
-			"test/2": SubscribeOptions{QoS: 2},
-			"test/3": SubscribeOptions{QoS: 0},
+			"test/1": {QoS: 1},
+			"test/2": {QoS: 2},
+			"test/3": {QoS: 0},
 		},
 	}
 
@@ -118,7 +118,6 @@ func TestClientSubscribe(t *testing.T) {
 }
 
 func TestClientUnsubscribe(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.UNSUBACK, &packets.Unsuback{
 		Reasons:    []byte{0, 17},
@@ -131,6 +130,7 @@ func TestClientUnsubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
 
 	c.stop = make(chan struct{})
 	go c.Incoming()
@@ -151,7 +151,6 @@ func TestClientUnsubscribe(t *testing.T) {
 }
 
 func TestClientPublishQoS0(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS0: ", log.LstdFlags))
 	ts := newTestServer()
 	go ts.Run()
 	defer ts.Stop()
@@ -160,6 +159,7 @@ func TestClientPublishQoS0(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS0: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -180,7 +180,6 @@ func TestClientPublishQoS0(t *testing.T) {
 }
 
 func TestClientPublishQoS1(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.PUBACK, &packets.Puback{
 		ReasonCode: packets.PubackSuccess,
@@ -193,6 +192,7 @@ func TestClientPublishQoS1(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -214,7 +214,6 @@ func TestClientPublishQoS1(t *testing.T) {
 }
 
 func TestClientPublishQoS2(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.PUBREC, &packets.Pubrec{
 		ReasonCode: packets.PubrecSuccess,
@@ -231,6 +230,7 @@ func TestClientPublishQoS2(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -253,7 +253,6 @@ func TestClientPublishQoS2(t *testing.T) {
 
 func TestClientReceiveQoS0(t *testing.T) {
 	rChan := make(chan struct{})
-	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS0: ", log.LstdFlags))
 	ts := newTestServer()
 	go ts.Run()
 	defer ts.Stop()
@@ -268,6 +267,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS0: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -287,7 +287,6 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 func TestClientReceiveQoS1(t *testing.T) {
 	rChan := make(chan struct{})
-	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS1: ", log.LstdFlags))
 	ts := newTestServer()
 	go ts.Run()
 	defer ts.Stop()
@@ -302,6 +301,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS1: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -321,7 +321,6 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 func TestClientReceiveQoS2(t *testing.T) {
 	rChan := make(chan struct{})
-	SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS2: ", log.LstdFlags))
 	ts := newTestServer()
 	go ts.Run()
 	defer ts.Stop()
@@ -336,6 +335,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS2: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -355,7 +355,6 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 func TestReceiveServerDisconnect(t *testing.T) {
 	rChan := make(chan struct{})
-	SetDebugLogger(log.New(os.Stderr, "SERVERDISCONNECT: ", log.LstdFlags))
 	ts := newTestServer()
 	go ts.Run()
 	defer ts.Stop()
@@ -369,6 +368,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 		},
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "SERVERDISCONNECT: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -388,7 +388,6 @@ func TestReceiveServerDisconnect(t *testing.T) {
 }
 
 func TestAuthenticate(t *testing.T) {
-	SetDebugLogger(log.New(os.Stderr, "AUTHENTICATE: ", log.LstdFlags))
 	ts := newTestServer()
 	ts.SetResponse(packets.AUTH, &packets.Auth{
 		ReasonCode: packets.AuthSuccess,
@@ -401,6 +400,7 @@ func TestAuthenticate(t *testing.T) {
 		AuthHandler: &fakeAuth{},
 	})
 	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATE: ", log.LstdFlags))
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)

@@ -24,6 +24,7 @@ type Router interface {
 	RegisterHandler(string, MessageHandler)
 	UnregisterHandler(string)
 	Route(*packets.Publish)
+	SetDebug(Logger)
 }
 
 // StandardRouter is a library provided implementation of a Router that
@@ -32,6 +33,7 @@ type StandardRouter struct {
 	sync.RWMutex
 	subscriptions map[string][]MessageHandler
 	aliases       map[uint16]string
+	debug         Logger
 }
 
 // NewStandardRouter instantiates and returns an instance of a StandardRouter
@@ -39,13 +41,14 @@ func NewStandardRouter() *StandardRouter {
 	return &StandardRouter{
 		subscriptions: make(map[string][]MessageHandler),
 		aliases:       make(map[uint16]string),
+		debug:         NOOPLogger{},
 	}
 }
 
 // RegisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
-	debug.Println("Registering handler for:", topic)
+	r.debug.Println("Registering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
 
@@ -55,7 +58,7 @@ func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
 // UnregisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) UnregisterHandler(topic string) {
-	debug.Println("Unregistering handler for:", topic)
+	r.debug.Println("Unregistering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
 
@@ -65,7 +68,7 @@ func (r *StandardRouter) UnregisterHandler(topic string) {
 // Route is the library provided StandardRouter's implementation
 // of the required interface function()
 func (r *StandardRouter) Route(pb *packets.Publish) {
-	debug.Println("Routing message for:", pb.Topic)
+	r.debug.Println("Routing message for:", pb.Topic)
 	r.RLock()
 	defer r.RUnlock()
 
@@ -91,6 +94,12 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 			}
 		}
 	}
+}
+
+// SetDebug sets the logger l to be used for printing debug
+// information for the router
+func (r *StandardRouter) SetDebug(l Logger) {
+	r.debug = l
 }
 
 func match(route, topic string) bool {
@@ -147,6 +156,7 @@ type SingleHandlerRouter struct {
 	sync.Mutex
 	aliases map[uint16]string
 	handler MessageHandler
+	debug   Logger
 }
 
 // NewSingleHandlerRouter instantiates and returns an instance of a SingleHandlerRouter
@@ -154,6 +164,7 @@ func NewSingleHandlerRouter(h MessageHandler) *SingleHandlerRouter {
 	return &SingleHandlerRouter{
 		aliases: make(map[uint16]string),
 		handler: h,
+		debug:   NOOPLogger{},
 	}
 }
 
@@ -182,4 +193,10 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 		}
 	}
 	s.handler(m)
+}
+
+// SetDebug sets the logger l to be used for printing debug
+// information for the router
+func (s *SingleHandlerRouter) SetDebug(l Logger) {
+	s.debug = l
 }
