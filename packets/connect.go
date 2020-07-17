@@ -126,31 +126,32 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 
 // Buffers is the implementation of the interface required function for a packet
 func (c *Connect) Buffers() net.Buffers {
-	var header bytes.Buffer
-	var body bytes.Buffer
-	writeString(c.ProtocolName, &header)
-	header.WriteByte(c.ProtocolVersion)
-	header.WriteByte(c.PackFlags())
-	writeUint16(c.KeepAlive, &header)
-	idvp := c.Properties.Pack(CONNECT)
-	propLen := encodeVBI(len(idvp))
+	var cp bytes.Buffer
 
-	writeString(c.ClientID, &body)
+	writeString(c.ProtocolName, &cp)
+	cp.WriteByte(c.ProtocolVersion)
+	cp.WriteByte(c.PackFlags())
+	writeUint16(c.KeepAlive, &cp)
+	idvp := c.Properties.Pack(CONNECT)
+	encodeVBIdirect(len(idvp), &cp)
+	cp.Write(idvp)
+
+	writeString(c.ClientID, &cp)
 	if c.WillFlag {
 		willIdvp := c.WillProperties.Pack(CONNECT)
-		body.Write(encodeVBI(len(willIdvp)))
-		body.Write(willIdvp)
-		writeString(c.WillTopic, &body)
-		writeBinary(c.WillMessage, &body)
+		encodeVBIdirect(len(willIdvp), &cp)
+		cp.Write(willIdvp)
+		writeString(c.WillTopic, &cp)
+		writeBinary(c.WillMessage, &cp)
 	}
 	if c.UsernameFlag {
-		writeString(c.Username, &body)
+		writeString(c.Username, &cp)
 	}
 	if c.PasswordFlag {
-		writeBinary(c.Password, &body)
+		writeBinary(c.Password, &cp)
 	}
 
-	return net.Buffers{header.Bytes(), propLen, idvp, body.Bytes()}
+	return net.Buffers{cp.Bytes()}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

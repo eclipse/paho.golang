@@ -24,13 +24,13 @@ type testServer struct {
 	conn       net.Conn
 	clientConn net.Conn
 	stop       chan struct{}
-	responses  map[packets.PacketType]packets.Packet
+	responses  map[byte]packets.Packet
 }
 
 func newTestServer() *testServer {
 	t := &testServer{
 		stop:      make(chan struct{}),
-		responses: make(map[packets.PacketType]packets.Packet),
+		responses: make(map[byte]packets.Packet),
 	}
 	t.conn, t.clientConn = net.Pipe()
 
@@ -41,7 +41,7 @@ func (t *testServer) ClientConn() net.Conn {
 	return t.clientConn
 }
 
-func (t *testServer) SetResponse(pt packets.PacketType, p packets.Packet) {
+func (t *testServer) SetResponse(pt byte, p packets.Packet) {
 	t.responses[pt] = p
 }
 
@@ -150,7 +150,9 @@ func (t *testServer) Run() {
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
-				pr.WriteTo(t.conn)
+				if _, err := pr.WriteTo(t.conn); err != nil {
+					log.Println("error writing pingreq", err)
+				}
 			}
 		}
 	}

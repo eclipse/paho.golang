@@ -24,8 +24,6 @@ func main() {
 
 	logger := log.New(os.Stdout, "SUB: ", log.LstdFlags)
 
-	paho.SetDebugLogger(logger)
-	paho.SetErrorLogger(logger)
 	msgChan := make(chan *paho.Publish)
 
 	conn, err := net.Dial("tcp", *server)
@@ -39,6 +37,8 @@ func main() {
 		}),
 		Conn: conn,
 	})
+	c.SetDebugLogger(logger)
+	c.SetErrorLogger(logger)
 
 	cp := &paho.Connect{
 		KeepAlive:  30,
@@ -79,7 +79,7 @@ func main() {
 
 	sa, err := c.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			*topic: paho.SubscribeOptions{QoS: byte(*qos)},
+			*topic: {QoS: byte(*qos)},
 		},
 	})
 	if err != nil {
