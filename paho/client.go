@@ -34,6 +34,12 @@ type (
 		Persistence   Persistence
 		PacketTimeout time.Duration
 		OnDisconnect  func(*Disconnect)
+		PublishHook   func(*Publish)
+		// PublishHook allows a user provided function to be called before
+		// a Publish packet is sent allowing it to inspect or modify the
+		// Publish, an example of the utility of this is provided in the
+		// Topic Alias Handler extension which will automatically assign
+		// and use topic alias values rather than topic strings.
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -596,6 +602,13 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 	}
 	if !c.serverProps.RetainAvailable && p.Retain {
 		return nil, fmt.Errorf("cannot send Publish with retain flag set, server does not support retained messages")
+	}
+	if (p.Properties == nil || p.Properties.TopicAlias == nil) && p.Topic == "" {
+		return nil, fmt.Errorf("cannot send a publish with no TopicAlias and no Topic set")
+	}
+
+	if c.ClientConfig.PublishHook != nil {
+		c.ClientConfig.PublishHook(p)
 	}
 
 	c.debug.Printf("sending message to %s", p.Topic)

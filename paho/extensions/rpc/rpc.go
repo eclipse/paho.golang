@@ -27,7 +27,7 @@ func NewHandler(c *paho.Client) (*Handler, error) {
 
 	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): paho.SubscribeOptions{QoS: 1},
+			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
 		},
 	})
 	if err != nil {

@@ -105,6 +105,9 @@ func (p *Publish) String() string {
 	if p.Properties.CorrelationData != nil {
 		fmt.Fprintf(&b, "CorrelationData: %v\n", p.Properties.CorrelationData)
 	}
+	if p.Properties.TopicAlias != nil {
+		fmt.Fprintf(&b, "TopicAlias: %d\n", p.Properties.TopicAlias)
+	}
 	if p.Properties.SubscriptionIdentifier != nil {
 		fmt.Fprintf(&b, "SubscriptionIdentifier: %v\n", p.Properties.SubscriptionIdentifier)
 	}
