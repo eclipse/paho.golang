@@ -1,6 +1,10 @@
 package paho
 
-import "github.com/netdata/paho.golang/packets"
+import (
+	"context"
+
+	"github.com/netdata/paho.golang/packets"
+)
 
 type LogLevel byte
 
@@ -19,7 +23,7 @@ type LogEntry struct {
 	ControlPacket *packets.ControlPacket
 }
 
-func (c *Client) log(level LogLevel, msg string, opts ...func(*LogEntry)) {
+func (c *Client) logCtx(ctx context.Context, level LogLevel, msg string, opts ...func(*LogEntry)) {
 	fn := c.Logger
 	if fn == nil {
 		return
@@ -31,5 +35,9 @@ func (c *Client) log(level LogLevel, msg string, opts ...func(*LogEntry)) {
 	for _, opt := range opts {
 		opt(&e)
 	}
-	fn(e)
+	fn(ctx, e)
+}
+
+func (c *Client) log(level LogLevel, msg string, opts ...func(*LogEntry)) {
+	c.logCtx(context.Background(), level, msg, opts...)
 }
