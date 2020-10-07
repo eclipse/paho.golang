@@ -14,14 +14,14 @@ type Trace struct {
 
 type PublishStartTrace struct {
 	Packet *packets.Publish
-	OnDone func(PublishDoneTrace)
+	OnDone func(context.Context, PublishDoneTrace)
 }
 
-func (p *PublishStartTrace) done(err error) {
+func (p *PublishStartTrace) done(ctx context.Context, err error) {
 	if p == nil || p.OnDone == nil {
 		return
 	}
-	p.OnDone(PublishDoneTrace{
+	p.OnDone(ctx, PublishDoneTrace{
 		Error: err,
 	})
 }
@@ -43,7 +43,7 @@ func (c *Client) tracePublish(ctx context.Context, p *packets.Publish) *PublishS
 }
 
 type RecvStartTrace struct {
-	OnDone func(RecvDoneTrace)
+	OnDone func(context.Context, RecvDoneTrace)
 }
 
 type RecvDoneTrace struct {
@@ -62,11 +62,11 @@ func (c *Client) traceRecv(ctx context.Context) *RecvStartTrace {
 	return &t
 }
 
-func (t *RecvStartTrace) done(x interface{}, err error) {
+func (t *RecvStartTrace) done(ctx context.Context, x interface{}, err error) {
 	if t == nil || t.OnDone == nil {
 		return
 	}
-	t.OnDone(RecvDoneTrace{
+	t.OnDone(ctx, RecvDoneTrace{
 		Packet:     x,
 		PacketType: matchPacketType(x),
 		Error:      err,
@@ -77,7 +77,7 @@ type SendStartTrace struct {
 	Packet     interface{}
 	PacketType packets.PacketType
 
-	OnDone func(SendDoneTrace)
+	OnDone func(context.Context, SendDoneTrace)
 }
 
 type SendDoneTrace struct {
@@ -97,9 +97,9 @@ func (c *Client) traceSend(ctx context.Context, x interface{}) *SendStartTrace {
 	return &t
 }
 
-func (t *SendStartTrace) done(err error) {
+func (t *SendStartTrace) done(ctx context.Context, err error) {
 	if t != nil && t.OnDone != nil {
-		t.OnDone(SendDoneTrace{
+		t.OnDone(ctx, SendDoneTrace{
 			Error: err,
 		})
 	}
