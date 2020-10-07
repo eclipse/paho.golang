@@ -1,25 +1,27 @@
 package paho
 
 import (
+	"context"
+
 	"github.com/netdata/paho.golang/packets"
 )
 
 type Trace struct {
-	OnSend    func(*SendStartTrace)
-	OnRecv    func(*RecvStartTrace)
-	OnPublish func(*PublishStartTrace)
+	OnSend    func(context.Context, *SendStartTrace)
+	OnRecv    func(context.Context, *RecvStartTrace)
+	OnPublish func(context.Context, *PublishStartTrace)
 }
 
 type PublishStartTrace struct {
 	Packet *packets.Publish
-	OnDone func(PublishDoneTrace)
+	OnDone func(context.Context, PublishDoneTrace)
 }
 
-func (p *PublishStartTrace) done(err error) {
+func (p *PublishStartTrace) done(ctx context.Context, err error) {
 	if p == nil || p.OnDone == nil {
 		return
 	}
-	p.OnDone(PublishDoneTrace{
+	p.OnDone(ctx, PublishDoneTrace{
 		Error: err,
 	})
 }
@@ -28,7 +30,7 @@ type PublishDoneTrace struct {
 	Error error
 }
 
-func (c *Client) tracePublish(p *packets.Publish) *PublishStartTrace {
+func (c *Client) tracePublish(ctx context.Context, p *packets.Publish) *PublishStartTrace {
 	fn := c.Trace.OnPublish
 	if fn == nil {
 		return nil
@@ -36,12 +38,12 @@ func (c *Client) tracePublish(p *packets.Publish) *PublishStartTrace {
 	t := PublishStartTrace{
 		Packet: p,
 	}
-	fn(&t)
+	fn(ctx, &t)
 	return &t
 }
 
 type RecvStartTrace struct {
-	OnDone func(RecvDoneTrace)
+	OnDone func(context.Context, RecvDoneTrace)
 }
 
 type RecvDoneTrace struct {
@@ -50,21 +52,21 @@ type RecvDoneTrace struct {
 	Error      error
 }
 
-func (c *Client) traceRecv() *RecvStartTrace {
+func (c *Client) traceRecv(ctx context.Context) *RecvStartTrace {
 	fn := c.Trace.OnRecv
 	if fn == nil {
 		return nil
 	}
 	var t RecvStartTrace
-	fn(&t)
+	fn(ctx, &t)
 	return &t
 }
 
-func (t *RecvStartTrace) done(x interface{}, err error) {
+func (t *RecvStartTrace) done(ctx context.Context, x interface{}, err error) {
 	if t == nil || t.OnDone == nil {
 		return
 	}
-	t.OnDone(RecvDoneTrace{
+	t.OnDone(ctx, RecvDoneTrace{
 		Packet:     x,
 		PacketType: matchPacketType(x),
 		Error:      err,
@@ -75,14 +77,14 @@ type SendStartTrace struct {
 	Packet     interface{}
 	PacketType packets.PacketType
 
-	OnDone func(SendDoneTrace)
+	OnDone func(context.Context, SendDoneTrace)
 }
 
 type SendDoneTrace struct {
 	Error error
 }
 
-func (c *Client) traceSend(x interface{}) *SendStartTrace {
+func (c *Client) traceSend(ctx context.Context, x interface{}) *SendStartTrace {
 	fn := c.Trace.OnSend
 	if fn == nil {
 		return nil
@@ -91,13 +93,13 @@ func (c *Client) traceSend(x interface{}) *SendStartTrace {
 		Packet:     x,
 		PacketType: matchPacketType(x),
 	}
-	fn(&t)
+	fn(ctx, &t)
 	return &t
 }
 
-func (t *SendStartTrace) done(err error) {
+func (t *SendStartTrace) done(ctx context.Context, err error) {
 	if t != nil && t.OnDone != nil {
-		t.OnDone(SendDoneTrace{
+		t.OnDone(ctx, SendDoneTrace{
 			Error: err,
 		})
 	}
