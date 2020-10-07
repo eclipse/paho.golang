@@ -349,7 +349,7 @@ var (
 )
 
 func (c *Client) write(ctx context.Context, w io.WriterTo) (err error) {
-	t := c.traceSend(w)
+	t := c.traceSend(ctx, w)
 	defer func() {
 		t.done(err)
 	}()
@@ -395,7 +395,7 @@ func (c *Client) reader() {
 	}()
 	ctx := context.Background()
 	for {
-		t := c.traceRecv()
+		t := c.traceRecv(ctx)
 		recv, err := packets.ReadPacket(c.Conn)
 		t.done(recv, err)
 		if err == io.EOF {
@@ -823,7 +823,7 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (_ *PublishResponse, e
 }
 
 func (c *Client) publishQoS0(ctx context.Context, pb *packets.Publish) (_ *PublishResponse, err error) {
-	t := c.tracePublish(pb)
+	t := c.tracePublish(ctx, pb)
 	defer func() {
 		t.done(err)
 	}()
@@ -844,7 +844,7 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (_ *Publ
 		return nil, err
 	}
 
-	t := c.tracePublish(pb)
+	t := c.tracePublish(ctx, pb)
 	defer func() {
 		t.done(err)
 	}()
