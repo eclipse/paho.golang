@@ -2,6 +2,7 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -573,7 +574,11 @@ func (c *Client) pinger(d time.Duration) {
 }
 
 func (c *Client) fail(ctx context.Context, err error) {
-	c.logCtx(ctx, LevelError, "client failed", func(e *LogEntry) {
+	lvl := LevelError
+	if errors.Is(err, context.Canceled) {
+		lvl = LevelWarn
+	}
+	c.logCtx(ctx, lvl, "client failed", func(e *LogEntry) {
 		e.Error = err
 	})
 	c.close()
