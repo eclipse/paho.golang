@@ -674,7 +674,7 @@ var ValidProperties = map[byte]map[byte]struct{}{
 	PropCorrelationData:        {PUBLISH: {}},
 	PropTopicAlias:             {PUBLISH: {}},
 	PropSubscriptionIdentifier: {PUBLISH: {}, SUBSCRIBE: {}},
-	PropSessionExpiryInterval:  {CONNECT: {}, DISCONNECT: {}},
+	PropSessionExpiryInterval:  {CONNECT: {}, CONNACK: {}, DISCONNECT: {}},
 	PropAssignedClientID:       {CONNACK: {}},
 	PropServerKeepAlive:        {CONNACK: {}},
 	PropWildcardSubAvailable:   {CONNACK: {}},
