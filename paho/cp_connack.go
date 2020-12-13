@@ -13,22 +13,23 @@ type (
 	// ConnackProperties is a struct of the properties that can be set
 	// for a Connack packet
 	ConnackProperties struct {
-		AuthData             []byte
-		AuthMethod           string
-		ResponseInfo         string
-		ServerReference      string
-		ReasonString         string
-		AssignedClientID     string
-		MaximumPacketSize    *uint32
-		ReceiveMaximum       *uint16
-		TopicAliasMaximum    *uint16
-		ServerKeepAlive      *uint16
-		MaximumQoS           *byte
-		User                 map[string]string
-		WildcardSubAvailable bool
-		SubIDAvailable       bool
-		SharedSubAvailable   bool
-		RetainAvailable      bool
+		SessionExpiryInterval *uint32
+		AuthData              []byte
+		AuthMethod            string
+		ResponseInfo          string
+		ServerReference       string
+		ReasonString          string
+		AssignedClientID      string
+		MaximumPacketSize     *uint32
+		ReceiveMaximum        *uint16
+		TopicAliasMaximum     *uint16
+		ServerKeepAlive       *uint16
+		MaximumQoS            *byte
+		User                  map[string]string
+		WildcardSubAvailable  bool
+		SubIDAvailable        bool
+		SharedSubAvailable    bool
+		RetainAvailable       bool
 	}
 )
 
@@ -37,22 +38,23 @@ type (
 // which it is called
 func (c *Connack) InitProperties(p *packets.Properties) {
 	c.Properties = &ConnackProperties{
-		AssignedClientID:     p.AssignedClientID,
-		ServerKeepAlive:      p.ServerKeepAlive,
-		WildcardSubAvailable: true,
-		SubIDAvailable:       true,
-		SharedSubAvailable:   true,
-		RetainAvailable:      true,
-		ResponseInfo:         p.ResponseInfo,
-		AuthMethod:           p.AuthMethod,
-		AuthData:             p.AuthData,
-		ServerReference:      p.ServerReference,
-		ReasonString:         p.ReasonString,
-		ReceiveMaximum:       p.ReceiveMaximum,
-		TopicAliasMaximum:    p.TopicAliasMaximum,
-		MaximumQoS:           p.MaximumQOS,
-		MaximumPacketSize:    p.MaximumPacketSize,
-		User:                 p.User,
+		AssignedClientID:      p.AssignedClientID,
+		ServerKeepAlive:       p.ServerKeepAlive,
+		WildcardSubAvailable:  true,
+		SubIDAvailable:        true,
+		SharedSubAvailable:    true,
+		RetainAvailable:       true,
+		ResponseInfo:          p.ResponseInfo,
+		SessionExpiryInterval: p.SessionExpiryInterval,
+		AuthMethod:            p.AuthMethod,
+		AuthData:              p.AuthData,
+		ServerReference:       p.ServerReference,
+		ReasonString:          p.ReasonString,
+		ReceiveMaximum:        p.ReceiveMaximum,
+		TopicAliasMaximum:     p.TopicAliasMaximum,
+		MaximumQoS:            p.MaximumQOS,
+		MaximumPacketSize:     p.MaximumPacketSize,
+		User:                  p.User,
 	}
 
 	if p.WildcardSubAvailable != nil {
