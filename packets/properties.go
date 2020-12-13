@@ -255,7 +255,7 @@ func (i *Properties) Pack(p byte) []byte {
 		}
 	}
 
-	if p == CONNECT || p == DISCONNECT {
+	if p == CONNECT || p == CONNACK || p == DISCONNECT {
 		if i.SessionExpiryInterval != nil {
 			b.WriteByte(PropSessionExpiryInterval)
 			writeUint32(*i.SessionExpiryInterval, &b)
@@ -419,7 +419,7 @@ func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 		}
 	}
 
-	if p == CONNECT || p == DISCONNECT {
+	if p == CONNECT || p == CONNACK || p == DISCONNECT {
 		if i.SessionExpiryInterval != nil {
 			b.WriteByte(PropSessionExpiryInterval)
 			writeUint32(*i.SessionExpiryInterval, &b)
@@ -674,7 +674,7 @@ var ValidProperties = map[byte]map[byte]struct{}{
 	PropCorrelationData:        {PUBLISH: {}},
 	PropTopicAlias:             {PUBLISH: {}},
 	PropSubscriptionIdentifier: {PUBLISH: {}, SUBSCRIBE: {}},
-	PropSessionExpiryInterval:  {CONNECT: {}, DISCONNECT: {}},
+	PropSessionExpiryInterval:  {CONNECT: {}, CONNACK: {}, DISCONNECT: {}},
 	PropAssignedClientID:       {CONNACK: {}},
 	PropServerKeepAlive:        {CONNACK: {}},
 	PropWildcardSubAvailable:   {CONNACK: {}},
