@@ -379,6 +379,8 @@ func (c *Client) Incoming() {
 					c.debug.Println("calling OnDisconnect")
 					go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
 				}
+			case packets.PINGRESP:
+				c.PingHandler.PingResp()
 			}
 		}
 	}
