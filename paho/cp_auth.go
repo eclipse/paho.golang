@@ -15,7 +15,7 @@ type (
 		AuthData     []byte
 		AuthMethod   string
 		ReasonString string
-		User         map[string]string
+		User         UserProperties
 	}
 )
 
@@ -27,7 +27,7 @@ func (a *Auth) InitProperties(p *packets.Properties) {
 		AuthMethod:   p.AuthMethod,
 		AuthData:     p.AuthData,
 		ReasonString: p.ReasonString,
-		User:         p.User,
+		User:         UserPropertiesFromPacketUser(p.User),
 	}
 }
 
@@ -50,7 +50,7 @@ func (a *Auth) Packet() *packets.Auth {
 			AuthMethod:   a.Properties.AuthMethod,
 			AuthData:     a.Properties.AuthData,
 			ReasonString: a.Properties.ReasonString,
-			User:         a.Properties.User,
+			User:         a.Properties.User.ToPacketProperties(),
 		}
 	}
 
@@ -73,7 +73,7 @@ func AuthResponseFromPacketAuth(a *packets.Auth) *AuthResponse {
 		ReasonCode: a.ReasonCode,
 		Properties: &AuthProperties{
 			ReasonString: a.Properties.ReasonString,
-			User:         a.Properties.User,
+			User:         UserPropertiesFromPacketUser(a.Properties.User),
 		},
 	}
 }
@@ -86,7 +86,7 @@ func AuthResponseFromPacketDisconnect(d *packets.Disconnect) *AuthResponse {
 		ReasonCode: d.ReasonCode,
 		Properties: &AuthProperties{
 			ReasonString: d.Properties.ReasonString,
-			User:         d.Properties.User,
+			User:         UserPropertiesFromPacketUser(d.Properties.User),
 		},
 	}
 }

@@ -104,43 +104,43 @@ func NewControlPacket(t byte) *ControlPacket {
 		cp.Content = &Connect{
 			ProtocolName:    "MQTT",
 			ProtocolVersion: 5,
-			Properties:      &Properties{User: make(map[string]string)},
+			Properties:      &Properties{},
 		}
 	case CONNACK:
-		cp.Content = &Connack{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Connack{Properties: &Properties{}}
 	case PUBLISH:
-		cp.Content = &Publish{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Publish{Properties: &Properties{}}
 	case PUBACK:
-		cp.Content = &Puback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Puback{Properties: &Properties{}}
 	case PUBREC:
-		cp.Content = &Pubrec{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubrec{Properties: &Properties{}}
 	case PUBREL:
 		cp.Flags = 2
-		cp.Content = &Pubrel{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubrel{Properties: &Properties{}}
 	case PUBCOMP:
-		cp.Content = &Pubcomp{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubcomp{Properties: &Properties{}}
 	case SUBSCRIBE:
 		cp.Flags = 2
 		cp.Content = &Subscribe{
 			Subscriptions: make(map[string]SubOptions),
-			Properties:    &Properties{User: make(map[string]string)},
+			Properties:    &Properties{},
 		}
 	case SUBACK:
-		cp.Content = &Suback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Suback{Properties: &Properties{}}
 	case UNSUBSCRIBE:
 		cp.Flags = 2
-		cp.Content = &Unsubscribe{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Unsubscribe{Properties: &Properties{}}
 	case UNSUBACK:
-		cp.Content = &Unsuback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Unsuback{Properties: &Properties{}}
 	case PINGREQ:
 		cp.Content = &Pingreq{}
 	case PINGRESP:
 		cp.Content = &Pingresp{}
 	case DISCONNECT:
-		cp.Content = &Disconnect{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Disconnect{Properties: &Properties{}}
 	case AUTH:
 		cp.Flags = 1
-		cp.Content = &Auth{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Auth{Properties: &Properties{}}
 	default:
 		return nil
 	}
@@ -167,43 +167,43 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 		cp.Content = &Connect{
 			ProtocolName:    "MQTT",
 			ProtocolVersion: 5,
-			Properties:      &Properties{User: make(map[string]string)},
+			Properties:      &Properties{},
 		}
 	case CONNACK:
-		cp.Content = &Connack{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Connack{Properties: &Properties{}}
 	case PUBLISH:
-		cp.Content = &Publish{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Publish{Properties: &Properties{}}
 	case PUBACK:
-		cp.Content = &Puback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Puback{Properties: &Properties{}}
 	case PUBREC:
-		cp.Content = &Pubrec{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubrec{Properties: &Properties{}}
 	case PUBREL:
 		cp.Flags = 2
-		cp.Content = &Pubrel{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubrel{Properties: &Properties{}}
 	case PUBCOMP:
-		cp.Content = &Pubcomp{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Pubcomp{Properties: &Properties{}}
 	case SUBSCRIBE:
 		cp.Flags = 2
 		cp.Content = &Subscribe{
 			Subscriptions: make(map[string]SubOptions),
-			Properties:    &Properties{User: make(map[string]string)},
+			Properties:    &Properties{},
 		}
 	case SUBACK:
-		cp.Content = &Suback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Suback{Properties: &Properties{}}
 	case UNSUBSCRIBE:
 		cp.Flags = 2
-		cp.Content = &Unsubscribe{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Unsubscribe{Properties: &Properties{}}
 	case UNSUBACK:
-		cp.Content = &Unsuback{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Unsuback{Properties: &Properties{}}
 	case PINGREQ:
 		cp.Content = &Pingreq{}
 	case PINGRESP:
 		cp.Content = &Pingresp{}
 	case DISCONNECT:
-		cp.Content = &Disconnect{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Disconnect{Properties: &Properties{}}
 	case AUTH:
 		cp.Flags = 1
-		cp.Content = &Auth{Properties: &Properties{User: make(map[string]string)}}
+		cp.Content = &Auth{Properties: &Properties{}}
 	default:
 		return nil, fmt.Errorf("unknown packet type %d requested", pt)
 	}

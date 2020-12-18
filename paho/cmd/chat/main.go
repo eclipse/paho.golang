@@ -35,7 +35,7 @@ func main() {
 
 	c := paho.NewClient(paho.ClientConfig{
 		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
-			log.Printf("%s : %s", m.Properties.User["chatname"], string(m.Payload))
+			log.Printf("%s : %s", m.Properties.User.Get("chatname"), string(m.Payload))
 		}),
 		Conn: conn,
 	})
@@ -96,15 +96,14 @@ func main() {
 			os.Exit(0)
 		}
 
+		props := &paho.PublishProperties{}
+		props.User.Add("chatname", *name)
+
 		pb := &paho.Publish{
-			Topic:   *topic,
-			QoS:     byte(*qos),
-			Payload: []byte(message),
-			Properties: &paho.PublishProperties{
-				User: map[string]string{
-					"chatname": *name,
-				},
-			},
+			Topic:      *topic,
+			QoS:        byte(*qos),
+			Payload:    []byte(message),
+			Properties: props,
 		}
 
 		if _, err = c.Publish(context.Background(), pb); err != nil {

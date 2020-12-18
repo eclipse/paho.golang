@@ -13,7 +13,7 @@ type (
 	// for a Unsuback packet
 	UnsubackProperties struct {
 		ReasonString string
-		User         map[string]string
+		User         UserProperties
 	}
 )
 
@@ -23,7 +23,7 @@ func (u *Unsuback) Packet() *packets.Unsuback {
 	return &packets.Unsuback{
 		Reasons: u.Reasons,
 		Properties: &packets.Properties{
-			User: u.Properties.User,
+			User: u.Properties.User.ToPacketProperties(),
 		},
 	}
 }
@@ -35,7 +35,7 @@ func UnsubackFromPacketUnsuback(u *packets.Unsuback) *Unsuback {
 		Reasons: u.Reasons,
 		Properties: &UnsubackProperties{
 			ReasonString: u.Properties.ReasonString,
-			User:         u.Properties.User,
+			User:         UserPropertiesFromPacketUser(u.Properties.User),
 		},
 	}
 }

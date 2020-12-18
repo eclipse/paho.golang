@@ -25,7 +25,7 @@ type (
 		TopicAliasMaximum     *uint16
 		ServerKeepAlive       *uint16
 		MaximumQoS            *byte
-		User                  map[string]string
+		User                  UserProperties
 		WildcardSubAvailable  bool
 		SubIDAvailable        bool
 		SharedSubAvailable    bool
@@ -54,7 +54,7 @@ func (c *Connack) InitProperties(p *packets.Properties) {
 		TopicAliasMaximum:     p.TopicAliasMaximum,
 		MaximumQoS:            p.MaximumQOS,
 		MaximumPacketSize:     p.MaximumPacketSize,
-		User:                  p.User,
+		User:                  UserPropertiesFromPacketUser(p.User),
 	}
 
 	if p.WildcardSubAvailable != nil {
