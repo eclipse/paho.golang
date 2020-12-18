@@ -12,7 +12,7 @@ type (
 	// UnsubscribeProperties is a struct of the properties that can be set
 	// for a Unsubscribe packet
 	UnsubscribeProperties struct {
-		User map[string]string
+		User UserProperties
 	}
 )
 
@@ -23,7 +23,7 @@ func (u *Unsubscribe) Packet() *packets.Unsubscribe {
 
 	if u.Properties != nil {
 		v.Properties = &packets.Properties{
-			User: u.Properties.User,
+			User: u.Properties.User.ToPacketProperties(),
 		}
 	}
 

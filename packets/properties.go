@@ -38,6 +38,13 @@ const (
 	PropSharedSubAvailable     byte = 42
 )
 
+// User is a struct for the User properties, originally it was a map
+// then it was pointed out that user properties are allowed to appear
+// more than once
+type User struct {
+	Key, Value string
+}
+
 // Properties is a struct representing the all the described properties
 // allowed by the MQTT protocol, determining the validity of a property
 // relvative to the packettype it was received in is provided by the
@@ -118,8 +125,8 @@ type Properties struct {
 	// RetainAvailable indicates whether the server supports messages with the
 	// retain flag set
 	RetainAvailable *byte
-	// User is a map of user provided properties
-	User map[string]string
+	// User is a slice of user provided properties (key and value)
+	User []User
 	// MaximumPacketSize allows the client or server to specify the maximum packet
 	// size in bytes that they support
 	MaximumPacketSize *uint32
@@ -288,15 +295,19 @@ func (i *Properties) Pack(p byte) []byte {
 		}
 	}
 
-	for k, v := range i.User {
+	for _, v := range i.User {
 		b.WriteByte(PropUser)
-		writeString(k, &b)
-		writeString(v, &b)
+		writeString(v.Key, &b)
+		writeString(v.Value, &b)
 	}
 
 	return b.Bytes()
 }
 
+// PackBuf will create a bytes.Buffer of the packed properties, it
+// will only pack the properties appropriate to the packet type p
+// even though other properties may exist, it will silently ignore
+// them
 func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 	var b bytes.Buffer
 
@@ -452,10 +463,10 @@ func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 		}
 	}
 
-	for k, v := range i.User {
+	for _, v := range i.User {
 		b.WriteByte(PropUser)
-		writeString(k, &b)
-		writeString(v, &b)
+		writeString(v.Key, &b)
+		writeString(v.Value, &b)
 	}
 
 	return &b
@@ -631,7 +642,7 @@ func (i *Properties) Unpack(r *bytes.Buffer, p byte) error {
 			if err != nil {
 				return err
 			}
-			i.User[k] = v
+			i.User = append(i.User, User{k, v})
 		case PropMaximumPacketSize:
 			mp, err := readUint32(buf)
 			if err != nil {
