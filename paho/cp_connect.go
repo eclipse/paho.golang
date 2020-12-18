@@ -28,7 +28,7 @@ type (
 		TopicAliasMaximum     *uint16
 		MaximumQOS            *byte
 		MaximumPacketSize     *uint32
-		User                  map[string]string
+		User                  UserProperties
 		RequestProblemInfo    bool
 		RequestResponseInfo   bool
 	}
@@ -49,7 +49,7 @@ func (c *Connect) InitProperties(p *packets.Properties) {
 		TopicAliasMaximum:     p.TopicAliasMaximum,
 		MaximumQOS:            p.MaximumQOS,
 		MaximumPacketSize:     p.MaximumPacketSize,
-		User:                  p.User,
+		User:                  UserPropertiesFromPacketUser(p.User),
 	}
 
 	if p.RequestResponseInfo != nil {
@@ -71,7 +71,7 @@ func (c *Connect) InitWillProperties(p *packets.Properties) {
 		ContentType:       p.ContentType,
 		ResponseTopic:     p.ResponseTopic,
 		CorrelationData:   p.CorrelationData,
-		User:              p.User,
+		User:              UserPropertiesFromPacketUser(p.User),
 	}
 }
 
@@ -124,7 +124,7 @@ func (c *Connect) Packet() *packets.Connect {
 			TopicAliasMaximum:     c.Properties.TopicAliasMaximum,
 			MaximumQOS:            c.Properties.MaximumQOS,
 			MaximumPacketSize:     c.Properties.MaximumPacketSize,
-			User:                  c.Properties.User,
+			User:                  c.Properties.User.ToPacketProperties(),
 		}
 		if c.Properties.RequestResponseInfo {
 			v.Properties.RequestResponseInfo = Byte(1)
@@ -148,7 +148,7 @@ func (c *Connect) Packet() *packets.Connect {
 				ContentType:       c.WillProperties.ContentType,
 				ResponseTopic:     c.WillProperties.ResponseTopic,
 				CorrelationData:   c.WillProperties.CorrelationData,
-				User:              c.WillProperties.User,
+				User:              c.WillProperties.User.ToPacketProperties(),
 			}
 		}
 	}
@@ -175,6 +175,6 @@ type (
 		ContentType       string
 		ResponseTopic     string
 		CorrelationData   []byte
-		User              map[string]string
+		User              UserProperties
 	}
 )

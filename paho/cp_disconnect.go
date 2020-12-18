@@ -15,7 +15,7 @@ type (
 		ServerReference       string
 		ReasonString          string
 		SessionExpiryInterval *uint32
-		User                  map[string]string
+		User                  UserProperties
 	}
 )
 
@@ -27,7 +27,7 @@ func (d *Disconnect) InitProperties(p *packets.Properties) {
 		SessionExpiryInterval: p.SessionExpiryInterval,
 		ServerReference:       p.ServerReference,
 		ReasonString:          p.ReasonString,
-		User:                  p.User,
+		User:                  UserPropertiesFromPacketUser(p.User),
 	}
 }
 
@@ -50,7 +50,7 @@ func (d *Disconnect) Packet() *packets.Disconnect {
 			SessionExpiryInterval: d.Properties.SessionExpiryInterval,
 			ServerReference:       d.Properties.ServerReference,
 			ReasonString:          d.Properties.ReasonString,
-			User:                  d.Properties.User,
+			User:                  d.Properties.User.ToPacketProperties(),
 		}
 	}
 

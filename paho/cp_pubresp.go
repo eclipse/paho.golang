@@ -14,7 +14,7 @@ type (
 	// a response to a QoS1 or QoS2 Publish
 	PublishResponseProperties struct {
 		ReasonString string
-		User         map[string]string
+		User         UserProperties
 	}
 )
 
@@ -25,7 +25,7 @@ func PublishResponseFromPuback(pa *packets.Puback) *PublishResponse {
 		ReasonCode: pa.ReasonCode,
 		Properties: &PublishResponseProperties{
 			ReasonString: pa.Properties.ReasonString,
-			User:         pa.Properties.User,
+			User:         UserPropertiesFromPacketUser(pa.Properties.User),
 		},
 	}
 }
@@ -37,7 +37,7 @@ func PublishResponseFromPubcomp(pc *packets.Pubcomp) *PublishResponse {
 		ReasonCode: pc.ReasonCode,
 		Properties: &PublishResponseProperties{
 			ReasonString: pc.Properties.ReasonString,
-			User:         pc.Properties.User,
+			User:         UserPropertiesFromPacketUser(pc.Properties.User),
 		},
 	}
 }
@@ -49,7 +49,7 @@ func PublishResponseFromPubrec(pr *packets.Pubrec) *PublishResponse {
 		ReasonCode: pr.ReasonCode,
 		Properties: &PublishResponseProperties{
 			ReasonString: pr.Properties.ReasonString,
-			User:         pr.Properties.User,
+			User:         UserPropertiesFromPacketUser(pr.Properties.User),
 		},
 	}
 }

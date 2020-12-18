@@ -92,7 +92,7 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 	}
 
 	if c.WillFlag {
-		c.WillProperties = &Properties{User: make(map[string]string)}
+		c.WillProperties = &Properties{}
 		err = c.WillProperties.Unpack(r, CONNECT)
 		if err != nil {
 			return err
