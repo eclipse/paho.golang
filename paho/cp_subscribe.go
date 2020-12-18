@@ -22,7 +22,7 @@ type (
 // for a Subscribe packet
 type SubscribeProperties struct {
 	SubscriptionIdentifier *uint32
-	User                   map[string]string
+	User                   UserProperties
 }
 
 // InitProperties is a function that takes a packet library
@@ -31,7 +31,7 @@ type SubscribeProperties struct {
 func (s *Subscribe) InitProperties(prop *packets.Properties) {
 	s.Properties = &SubscribeProperties{
 		SubscriptionIdentifier: prop.SubscriptionIdentifier,
-		User:                   prop.User,
+		User:                   UserPropertiesFromPacketUser(prop.User),
 	}
 }
 
@@ -59,7 +59,7 @@ func (s *Subscribe) Packet() *packets.Subscribe {
 	if s.Properties != nil {
 		v.Properties = &packets.Properties{
 			SubscriptionIdentifier: s.Properties.SubscriptionIdentifier,
-			User:                   s.Properties.User,
+			User:                   s.Properties.User.ToPacketProperties(),
 		}
 	}
 

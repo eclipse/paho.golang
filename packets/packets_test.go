@@ -158,7 +158,7 @@ func TestNewControlPacket(t *testing.T) {
 				Content: &Connect{
 					ProtocolName:    "MQTT",
 					ProtocolVersion: 5,
-					Properties:      &Properties{User: make(map[string]string)},
+					Properties:      &Properties{},
 				},
 			},
 		},
@@ -167,7 +167,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: CONNACK,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: CONNACK},
-				Content:     &Connack{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Connack{Properties: &Properties{}},
 			},
 		},
 		{
@@ -175,7 +175,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: PUBLISH,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: PUBLISH},
-				Content:     &Publish{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Publish{Properties: &Properties{}},
 			},
 		},
 		{
@@ -183,7 +183,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: PUBACK,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: PUBACK},
-				Content:     &Puback{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Puback{Properties: &Properties{}},
 			},
 		},
 		{
@@ -191,7 +191,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: PUBREC,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: PUBREC},
-				Content:     &Pubrec{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Pubrec{Properties: &Properties{}},
 			},
 		},
 		{
@@ -199,7 +199,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: PUBREL,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: PUBREL, Flags: 2},
-				Content:     &Pubrel{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Pubrel{Properties: &Properties{}},
 			},
 		},
 		{
@@ -207,7 +207,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: PUBCOMP,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: PUBCOMP},
-				Content:     &Pubcomp{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Pubcomp{Properties: &Properties{}},
 			},
 		},
 		{
@@ -216,7 +216,7 @@ func TestNewControlPacket(t *testing.T) {
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: SUBSCRIBE, Flags: 2},
 				Content: &Subscribe{
-					Properties:    &Properties{User: make(map[string]string)},
+					Properties:    &Properties{},
 					Subscriptions: make(map[string]SubOptions),
 				},
 			},
@@ -226,7 +226,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: SUBACK,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: SUBACK},
-				Content:     &Suback{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Suback{Properties: &Properties{}},
 			},
 		},
 		{
@@ -234,7 +234,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: UNSUBSCRIBE,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: UNSUBSCRIBE, Flags: 2},
-				Content:     &Unsubscribe{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Unsubscribe{Properties: &Properties{}},
 			},
 		},
 		{
@@ -242,7 +242,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: UNSUBACK,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: UNSUBACK},
-				Content:     &Unsuback{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Unsuback{Properties: &Properties{}},
 			},
 		},
 		{
@@ -266,7 +266,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: DISCONNECT,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: DISCONNECT},
-				Content:     &Disconnect{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Disconnect{Properties: &Properties{}},
 			},
 		},
 		{
@@ -274,7 +274,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: AUTH,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: AUTH, Flags: 1},
-				Content:     &Auth{Properties: &Properties{User: make(map[string]string)}},
+				Content:     &Auth{Properties: &Properties{}},
 			},
 		},
 		{
