@@ -75,13 +75,15 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 			}
 			if time.Since(p.lastPing) >= pt {
 				//time to send a ping
-				p.debug.Println("pingHandler sending ping request")
 				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
 					if p.pingFailHandler != nil {
 						p.pingFailHandler(err)
 					}
 					return
 				}
+				atomic.AddInt32(&p.pingOutstanding, 1)
+				p.lastPing = time.Now()
+				p.debug.Println("pingHandler sending ping request")
 			}
 		}
 	}
