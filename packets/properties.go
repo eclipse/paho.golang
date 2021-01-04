@@ -67,7 +67,7 @@ type Properties struct {
 	CorrelationData []byte
 	// SubscriptionIdentifier is an identifier of the subscription to which
 	// the Publish matched
-	SubscriptionIdentifier *uint32
+	SubscriptionIdentifier *int
 	// SessionExpiryInterval is the time in seconds after a client disconnects
 	// that the server should retain the session information (subscriptions etc)
 	SessionExpiryInterval *uint32
@@ -182,7 +182,7 @@ func (i *Properties) Pack(p byte) []byte {
 	if p == PUBLISH || p == SUBSCRIBE {
 		if i.SubscriptionIdentifier != nil {
 			b.WriteByte(PropSubscriptionIdentifier)
-			writeUint32(*i.SubscriptionIdentifier, &b)
+			encodeVBIdirect(*i.SubscriptionIdentifier, &b)
 		}
 	}
 
@@ -350,7 +350,7 @@ func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 	if p == PUBLISH || p == SUBSCRIBE {
 		if i.SubscriptionIdentifier != nil {
 			b.WriteByte(PropSubscriptionIdentifier)
-			writeUint32(*i.SubscriptionIdentifier, &b)
+			encodeVBIdirect(*i.SubscriptionIdentifier, &b)
 		}
 	}
 
@@ -532,7 +532,7 @@ func (i *Properties) Unpack(r *bytes.Buffer, p byte) error {
 			}
 			i.CorrelationData = cd
 		case PropSubscriptionIdentifier:
-			si, err := readUint32(buf)
+			si, err := decodeVBI(buf)
 			if err != nil {
 				return err
 			}

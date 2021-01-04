@@ -25,7 +25,7 @@ type (
 		ResponseTopic          string
 		PayloadFormat          *byte
 		MessageExpiry          *uint32
-		SubscriptionIdentifier *uint32
+		SubscriptionIdentifier *int
 		TopicAlias             *uint16
 		User                   UserProperties
 	}
