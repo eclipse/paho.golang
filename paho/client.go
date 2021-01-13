@@ -447,6 +447,15 @@ func (c *Client) reader() {
 			}
 		case packets.PUBLISH:
 			pb := recv.Content.(*packets.Publish)
+
+			// Its up to Router implementation to decide how it will process
+			// the packet (e.g. starting a new goroutine or block the receive
+			// loop).
+			if c.Router != nil {
+				c.Router.Route(pb)
+			}
+
+			// Sending PUBACK
 			switch pb.QoS {
 			case 1:
 				pa := packets.Puback{
@@ -460,13 +469,6 @@ func (c *Client) reader() {
 					PacketID:   pb.PacketID,
 				}
 				_ = c.write(ctx, &pr)
-			}
-
-			// Its up to Router implementation to decide how it will process
-			// the packet (e.g. starting a new goroutine or block the receive
-			// loop).
-			if c.Router != nil {
-				c.Router.Route(pb)
 			}
 
 		case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
