@@ -97,9 +97,9 @@ func TestClientSubscribe(t *testing.T) {
 
 	s := &Subscribe{
 		Subscriptions: map[string]SubscribeOptions{
-			"test/1": SubscribeOptions{QoS: 1},
-			"test/2": SubscribeOptions{QoS: 2},
-			"test/3": SubscribeOptions{QoS: 0},
+			"test/1": {QoS: 1},
+			"test/2": {QoS: 2},
+			"test/3": {QoS: 0},
 		},
 	}
 
@@ -239,7 +239,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: RouterFunc(func(p *packets.Publish) {
+		Router: RouterFunc(func(p *packets.Publish, _ func() error) {
 			assert.Equal(t, "test/0", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(0), p.QoS)
@@ -270,7 +270,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: RouterFunc(func(p *packets.Publish) {
+		Router: RouterFunc(func(p *packets.Publish, _ func() error) {
 			assert.Equal(t, "test/1", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(1), p.QoS)
@@ -301,7 +301,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: RouterFunc(func(p *packets.Publish) {
+		Router: RouterFunc(func(p *packets.Publish, _ func() error) {
 			assert.Equal(t, "test/2", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(2), p.QoS)

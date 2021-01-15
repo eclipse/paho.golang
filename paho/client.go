@@ -26,15 +26,15 @@ var (
 // NOTE: its a Router responsibility to deal with concurrent packets processing
 // (if needed).
 type Router interface {
-	Route(*packets.Publish)
+	Route(pb *packets.Publish, ack func() error)
 }
 
 // RouterFunc is an adapter to allow the use of ordinary functions as Router.
-type RouterFunc func(*packets.Publish)
+type RouterFunc func(pb *packets.Publish, ack func() error)
 
 // Route implements Router interface.
-func (f RouterFunc) Route(p *packets.Publish) {
-	f(p)
+func (f RouterFunc) Route(p *packets.Publish, ack func() error) {
+	f(p, ack)
 }
 
 // Auther is the interface for something that implements the extended
@@ -212,7 +212,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 			return
 		}
 
-		var cap *packets.Connack
+		var cnnap *packets.Connack
 		select {
 		case <-connCtx.Done():
 			c.logCtx(ctx, LevelTrace, "timeout waiting for CONNACK")
@@ -227,10 +227,10 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		case <-c.exit:
 			c.cerr = ErrClosed
 			return
-		case cap = <-c.caCtx.Return:
+		case cnnap = <-c.caCtx.Return:
 		}
 
-		ca := ConnackFromPacketConnack(cap)
+		ca := ConnackFromPacketConnack(cnnap)
 		c.ca = ca
 
 		if ca.ReasonCode >= 0x80 {
@@ -313,7 +313,7 @@ func (c *Client) close() {
 		<-c.writerDone
 		<-c.pingerDone
 
-		c.Conn.Close()
+		_ = c.Conn.Close()
 		<-c.readerDone
 		close(c.done)
 
@@ -344,9 +344,8 @@ func (c *Client) Close() {
 }
 
 var (
-	ErrClosed       = fmt.Errorf("paho: client closed")
-	ErrTimeout      = fmt.Errorf("paho: request timeout")
-	ErrNotConnected = fmt.Errorf("paho: client is not connected")
+	ErrClosed  = fmt.Errorf("paho: client closed")
+	ErrTimeout = fmt.Errorf("paho: request timeout")
 )
 
 func (c *Client) write(ctx context.Context, w io.WriterTo) (err error) {
@@ -417,11 +416,11 @@ func (c *Client) reader() {
 			}
 
 		case packets.CONNACK:
-			cap := recv.Content.(*packets.Connack)
+			cnnap := recv.Content.(*packets.Connack)
 			// NOTE: No need to acquire a lock for caCtx beacuse its never
 			// change.
 			if c.caCtx != nil {
-				c.caCtx.Return <- cap
+				c.caCtx.Return <- cnnap
 			}
 		case packets.AUTH:
 			ap := recv.Content.(*packets.Auth)
@@ -447,28 +446,32 @@ func (c *Client) reader() {
 			}
 		case packets.PUBLISH:
 			pb := recv.Content.(*packets.Publish)
+			ack := func() error {
+				switch pb.QoS {
+				case 1:
+					pa := packets.Puback{
+						Properties: &packets.Properties{},
+						PacketID:   pb.PacketID,
+					}
+					return c.write(ctx, &pa)
+				case 2:
+					pr := packets.Pubrec{
+						Properties: &packets.Properties{},
+						PacketID:   pb.PacketID,
+					}
+					return c.write(ctx, &pr)
+				}
+
+				return nil
+			}
 
 			// Its up to Router implementation to decide how it will process
 			// the packet (e.g. starting a new goroutine or block the receive
 			// loop).
 			if c.Router != nil {
-				c.Router.Route(pb)
-			}
-
-			// Sending PUBACK
-			switch pb.QoS {
-			case 1:
-				pa := packets.Puback{
-					Properties: &packets.Properties{},
-					PacketID:   pb.PacketID,
-				}
-				_ = c.write(ctx, &pa)
-			case 2:
-				pr := packets.Pubrec{
-					Properties: &packets.Properties{},
-					PacketID:   pb.PacketID,
-				}
-				_ = c.write(ctx, &pr)
+				c.Router.Route(pb, ack)
+			} else {
+				_ = ack()
 			}
 
 		case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
