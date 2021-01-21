@@ -34,7 +34,10 @@ type (
 		Persistence   Persistence
 		PacketTimeout time.Duration
 		OnDisconnect  func(*Disconnect)
-		PublishHook   func(*Publish)
+		// Only receive packets.DISCONNECT call
+		OnClientError func(error)
+		// Client error call, For example: net.Error
+		PublishHook func(*Publish)
 		// PublishHook allows a user provided function to be called before
 		// a Publish packet is sent allowing it to inspect or modify the
 		// Publish, an example of the utility of this is provided in the
@@ -126,6 +129,9 @@ func NewClient(conf ClientConfig) *Client {
 		c.PingHandler = DefaultPingerWithCustomFailHandler(func(e error) {
 			c.Error(e)
 		})
+	}
+	if c.OnClientError == nil {
+		c.OnClientError = func(e error) {}
 	}
 
 	return c
@@ -410,6 +416,7 @@ func (c *Client) Error(e error) {
 	c.debug.Println("ping stopped")
 	c.Conn.Close()
 	c.debug.Println("conn closed")
+	c.OnClientError(e)
 	c.mu.Unlock()
 }
 
