@@ -2,6 +2,7 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"testing"
@@ -361,9 +362,12 @@ func TestReceiveServerDisconnect(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		OnServerDisconnect: func(d *Disconnect) {
-			assert.Equal(t, byte(packets.DisconnectServerShuttingDown), d.ReasonCode)
-			assert.Equal(t, d.Properties.ReasonString, "GONE!")
+		OnConnectionLost: func(e error) {
+			var d *DisconnectError
+			require.True(t, errors.As(e, &d))
+			d = e.(*DisconnectError)
+			assert.Equal(t, byte(packets.DisconnectServerShuttingDown), d.Disconnect.ReasonCode)
+			assert.Equal(t, d.Disconnect.Properties.ReasonString, "GONE!")
 			close(rChan)
 		},
 	})
@@ -419,6 +423,90 @@ func TestAuthenticate(t *testing.T) {
 	})
 	require.Nil(t, err)
 	assert.True(t, ar.Success)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientPublishQoS1Persistence(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.PUBACK, &packets.Puback{
+		ReasonCode: packets.PubackSuccess,
+		Properties: &packets.Properties{},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	ps := newTestPersistence()
+
+	c := NewClient(ClientConfig{
+		Conn:        ts.ClientConn(),
+		Persistence: ps,
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	p := &Publish{
+		Topic:   "test/1",
+		QoS:     1,
+		Payload: []byte("test payload"),
+	}
+
+	pa, err := c.Publish(context.Background(), p)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), pa.ReasonCode)
+	assert.Equal(t, 1, ps.putCount, "putCount")
+	assert.Equal(t, 1, ps.deleteCount, "deleteCount")
+	assert.Equal(t, 0, ps.Len())
+
+	time.Sleep(10 * time.Millisecond)
+}
+
+func TestClientPublishQoS2Persistence(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.PUBREC, &packets.Pubrec{
+		ReasonCode: packets.PubrecSuccess,
+		Properties: &packets.Properties{},
+	})
+	ts.SetResponse(packets.PUBCOMP, &packets.Pubcomp{
+		ReasonCode: packets.PubcompSuccess,
+		Properties: &packets.Properties{},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	ps := newTestPersistence()
+
+	c := NewClient(ClientConfig{
+		Conn:        ts.ClientConn(),
+		Persistence: ps,
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
+
+	c.serverInflight = semaphore.NewWeighted(10000)
+	c.clientInflight = semaphore.NewWeighted(10000)
+	c.stop = make(chan struct{})
+	go c.Incoming()
+	go c.PingHandler.Start(c.Conn, 30*time.Second)
+
+	p := &Publish{
+		Topic:   "test/2",
+		QoS:     2,
+		Payload: []byte("test payload"),
+	}
+
+	pr, err := c.Publish(context.Background(), p)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), pr.ReasonCode)
+	assert.Equal(t, 2, ps.putCount, "putCount")
+	assert.Equal(t, 1, ps.deleteCount, "deleteCount")
+	assert.Equal(t, 0, ps.Len())
 
 	time.Sleep(10 * time.Millisecond)
 }
