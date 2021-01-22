@@ -361,7 +361,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		OnDisconnect: func(d *Disconnect) {
+		OnServerDisconnect: func(d *Disconnect) {
 			assert.Equal(t, byte(packets.DisconnectServerShuttingDown), d.ReasonCode)
 			assert.Equal(t, d.Properties.ReasonString, "GONE!")
 			close(rChan)

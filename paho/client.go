@@ -25,16 +25,16 @@ type (
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PingHandler, PacketTimeout and Router.
 	ClientConfig struct {
-		ClientID      string
-		Conn          net.Conn
-		MIDs          MIDService
-		AuthHandler   Auther
-		PingHandler   Pinger
-		Router        Router
-		Persistence   Persistence
-		PacketTimeout time.Duration
-		OnDisconnect  func(*Disconnect)
-		// Only receive packets.DISCONNECT call
+		ClientID           string
+		Conn               net.Conn
+		MIDs               MIDService
+		AuthHandler        Auther
+		PingHandler        Pinger
+		Router             Router
+		Persistence        Persistence
+		PacketTimeout      time.Duration
+		OnServerDisconnect func(*Disconnect)
+		// Only called when receiving packets.DISCONNECT from server
 		OnClientError func(error)
 		// Client error call, For example: net.Error
 		PublishHook func(*Publish)
@@ -385,11 +385,12 @@ func (c *Client) Incoming() {
 				if c.raCtx != nil {
 					c.raCtx.Return <- *recv
 				}
-				c.Error(fmt.Errorf("received server initiated disconnect"))
-				c.debug.Println(c.OnDisconnect)
-				if c.OnDisconnect != nil {
+				if c.OnServerDisconnect != nil {
+					c.close()
 					c.debug.Println("calling OnDisconnect")
-					go c.OnDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
+					go c.OnServerDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
+				} else {
+					c.OnClientError(fmt.Errorf("server initiated disconnect"))
 				}
 			case packets.PINGRESP:
 				c.PingHandler.PingResp()
@@ -398,12 +399,7 @@ func (c *Client) Incoming() {
 	}
 }
 
-// Error is called to signify that an error situation has occurred, this
-// causes the client's Stop channel to be closed (if it hasn't already been)
-// which results in the other client goroutines terminating.
-// It also closes the client network connection.
-func (c *Client) Error(e error) {
-	c.debug.Println("error called:", e)
+func (c *Client) close() {
 	c.mu.Lock()
 	select {
 	case <-c.stop:
@@ -416,8 +412,17 @@ func (c *Client) Error(e error) {
 	c.debug.Println("ping stopped")
 	c.Conn.Close()
 	c.debug.Println("conn closed")
-	c.OnClientError(e)
 	c.mu.Unlock()
+}
+
+// Error is called to signify that an error situation has occurred, this
+// causes the client's Stop channel to be closed (if it hasn't already been)
+// which results in the other client goroutines terminating.
+// It also closes the client network connection.
+func (c *Client) Error(e error) {
+	c.debug.Println("error called:", e)
+	c.close()
+	go c.OnClientError(e)
 }
 
 // Authenticate is used to initiate a reauthentication of credentials with the
