@@ -51,7 +51,7 @@ func (u UserProperties) GetAll(key string) []string {
 func (u UserProperties) ToPacketProperties() []packets.User {
 	ret := make([]packets.User, len(u))
 	for i, v := range u {
-		ret[i] = packets.User{v.Key, v.Value}
+		ret[i] = packets.User{Key: v.Key, Value: v.Value}
 	}
 
 	return ret
