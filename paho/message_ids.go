@@ -2,6 +2,7 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/eclipse/paho.golang/packets"
@@ -11,6 +12,10 @@ const (
 	midMin uint16 = 1
 	midMax uint16 = 65535
 )
+
+// ErrorMidsExhausted is returned from Request() when there are no
+// free message ids to be used.
+var ErrorMidsExhausted = errors.New("all message ids in use")
 
 // MIDService defines the interface for a struct that handles the
 // relationship between message ids and CPContexts
@@ -22,7 +27,7 @@ const (
 // to mark that messageid as available for reuse
 // Clear() resets the internal state of the MIDService
 type MIDService interface {
-	Request(*CPContext) uint16
+	Request(*CPContext) (uint16, error)
 	Get(uint16) *CPContext
 	Free(uint16)
 	Clear()
@@ -42,21 +47,27 @@ type CPContext struct {
 // to messages with a messageid
 type MIDs struct {
 	sync.Mutex
-	index map[uint16]*CPContext
+	lastMid uint16
+	index   []*CPContext
 }
 
 // Request is the library provided MIDService's implementation of
 // the required interface function()
-func (m *MIDs) Request(c *CPContext) uint16 {
+func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := midMin; i < midMax; i++ {
-		if _, ok := m.index[i]; !ok {
-			m.index[i] = c
-			return i
+	for i := uint16(1); i < midMax; i++ {
+		v := (m.lastMid + i) % midMax
+		if v == 0 {
+			continue
+		}
+		if inuse := m.index[v]; inuse == nil {
+			m.index[v] = c
+			m.lastMid = v
+			return v, nil
 		}
 	}
-	return 0
+	return 0, ErrorMidsExhausted
 }
 
 // Get is the library provided MIDService's implementation of
@@ -71,12 +82,12 @@ func (m *MIDs) Get(i uint16) *CPContext {
 // the required interface function()
 func (m *MIDs) Free(i uint16) {
 	m.Lock()
-	delete(m.index, i)
+	m.index[i] = nil
 	m.Unlock()
 }
 
 // Clear is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Clear() {
-	m.index = make(map[uint16]*CPContext)
+	m.index = make([]*CPContext, int(midMax))
 }
