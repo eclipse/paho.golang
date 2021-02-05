@@ -117,7 +117,7 @@ func NewClient(conf ClientConfig) *Client {
 		c.Persistence = &noopPersistence{}
 	}
 	if c.MIDs == nil {
-		c.MIDs = &MIDs{index: make(map[uint16]*CPContext)}
+		c.MIDs = &MIDs{index: make([]*CPContext, int(midMax))}
 	}
 	if c.PacketTimeout == 0 {
 		c.PacketTimeout = 10 * time.Second
@@ -499,7 +499,13 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 	sp := s.Packet()
 
-	sp.PacketID = c.MIDs.Request(cpCtx)
+	mid, err := c.MIDs.Request(cpCtx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.MIDs.Free(mid)
+	sp.PacketID = mid
+
 	c.debug.Println("sending SUBSCRIBE")
 	if _, err := sp.WriteTo(c.Conn); err != nil {
 		return nil, err
@@ -556,7 +562,13 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 	up := u.Packet()
 
-	up.PacketID = c.MIDs.Request(cpCtx)
+	mid, err := c.MIDs.Request(cpCtx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.MIDs.Free(mid)
+	up.PacketID = mid
+
 	c.debug.Println("sending UNSUBSCRIBE")
 	if _, err := up.WriteTo(c.Conn); err != nil {
 		return nil, err
@@ -652,7 +664,13 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	}
 	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
 
-	pb.PacketID = c.MIDs.Request(cpCtx)
+	mid, err := c.MIDs.Request(cpCtx)
+	if err != nil {
+		return nil, err
+	}
+	defer c.MIDs.Free(mid)
+	pb.PacketID = mid
+
 	if _, err := pb.WriteTo(c.Conn); err != nil {
 		return nil, err
 	}
