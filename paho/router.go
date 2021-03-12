@@ -24,7 +24,7 @@ type Router interface {
 	RegisterHandler(string, MessageHandler)
 	UnregisterHandler(string)
 	Route(*packets.Publish)
-	SetDebug(Logger)
+	SetDebugLogger(Logger)
 }
 
 // StandardRouter is a library provided implementation of a Router that
@@ -48,7 +48,7 @@ func NewStandardRouter() *StandardRouter {
 // RegisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
-	r.debug.Println("Registering handler for:", topic)
+	r.debug.Println("registering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
 
@@ -58,7 +58,7 @@ func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
 // UnregisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) UnregisterHandler(topic string) {
-	r.debug.Println("Unregistering handler for:", topic)
+	r.debug.Println("unregistering handler for:", topic)
 	r.Lock()
 	defer r.Unlock()
 
@@ -68,7 +68,7 @@ func (r *StandardRouter) UnregisterHandler(topic string) {
 // Route is the library provided StandardRouter's implementation
 // of the required interface function()
 func (r *StandardRouter) Route(pb *packets.Publish) {
-	r.debug.Println("Routing message for:", pb.Topic)
+	r.debug.Println("routing message for:", pb.Topic)
 	r.RLock()
 	defer r.RUnlock()
 
@@ -76,11 +76,14 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 
 	var topic string
 	if pb.Properties.TopicAlias != nil {
+		r.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
 			//Register new alias
+			r.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			r.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}
 		if t, ok := r.aliases[*pb.Properties.TopicAlias]; ok {
+			r.debug.Printf("aliased topic '%d' translates to '%s'", *pb.Properties.TopicAlias, m.Topic)
 			topic = t
 		}
 	} else {
@@ -89,6 +92,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 
 	for route, handlers := range r.subscriptions {
 		if match(route, topic) {
+			r.debug.Println("found handler for:", route)
 			for _, handler := range handlers {
 				handler(m)
 			}
@@ -98,7 +102,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 
 // SetDebug sets the logger l to be used for printing debug
 // information for the router
-func (r *StandardRouter) SetDebug(l Logger) {
+func (r *StandardRouter) SetDebugLogger(l Logger) {
 	r.debug = l
 }
 
@@ -171,6 +175,7 @@ func NewSingleHandlerRouter(h MessageHandler) *SingleHandlerRouter {
 // RegisterHandler is the library provided SingleHandlerRouter's
 // implementation of the required interface function()
 func (s *SingleHandlerRouter) RegisterHandler(topic string, h MessageHandler) {
+	s.debug.Println("registering handler for:", topic)
 	s.handler = h
 }
 
@@ -183,12 +188,17 @@ func (s *SingleHandlerRouter) UnregisterHandler(topic string) {}
 func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 	m := PublishFromPacketPublish(pb)
 
+	s.debug.Println("routing message for:", m.Topic)
+
 	if pb.Properties.TopicAlias != nil {
+		s.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
 			//Register new alias
+			s.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			s.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}
 		if t, ok := s.aliases[*pb.Properties.TopicAlias]; ok {
+			s.debug.Printf("aliased topic '%d' translates to '%s'", *pb.Properties.TopicAlias, m.Topic)
 			m.Topic = t
 		}
 	}
@@ -197,6 +207,6 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 
 // SetDebug sets the logger l to be used for printing debug
 // information for the router
-func (s *SingleHandlerRouter) SetDebug(l Logger) {
+func (s *SingleHandlerRouter) SetDebugLogger(l Logger) {
 	s.debug = l
 }
