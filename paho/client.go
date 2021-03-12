@@ -377,7 +377,7 @@ func (c *Client) Incoming() {
 				c.debug.Println("received PUBREL for", recv.PacketID())
 				//Auto respond to pubrels unless failure code
 				pr := recv.Content.(*packets.Pubrel)
-				if pr.ReasonCode >= 0x92 {
+				if pr.ReasonCode >= 0x80 {
 					//Received a failure code, continue
 					continue
 				} else {
