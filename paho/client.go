@@ -287,11 +287,13 @@ func (c *Client) Incoming() {
 			}
 			switch recv.Type {
 			case packets.CONNACK:
+				c.debug.Println("received CONNACK")
 				cap := recv.Content.(*packets.Connack)
 				if c.caCtx != nil {
 					c.caCtx.Return <- cap
 				}
 			case packets.AUTH:
+				c.debug.Println("received AUTH")
 				ap := recv.Content.(*packets.Auth)
 				switch ap.ReasonCode {
 				case 0x0:
@@ -311,6 +313,7 @@ func (c *Client) Incoming() {
 				}
 			case packets.PUBLISH:
 				pb := recv.Content.(*packets.Publish)
+				c.debug.Printf("received QoS%d PUBLISH", pb.QoS)
 				go c.Router.Route(pb)
 				switch pb.QoS {
 				case 1:
@@ -318,6 +321,7 @@ func (c *Client) Incoming() {
 						Properties: &packets.Properties{},
 						PacketID:   pb.PacketID,
 					}
+					c.debug.Println("sending PUBACK")
 					_, err := pa.WriteTo(c.Conn)
 					if err != nil {
 						c.errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
@@ -327,26 +331,28 @@ func (c *Client) Incoming() {
 						Properties: &packets.Properties{},
 						PacketID:   pb.PacketID,
 					}
+					c.debug.Printf("sending PUBREC")
 					_, err := pr.WriteTo(c.Conn)
 					if err != nil {
 						c.errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
 					}
 				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
-				c.debug.Println("received packet with id", recv.PacketID())
+				c.debug.Printf("received %s packet with id %d", recv.PacketType(), recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
 					cpCtx.Return <- *recv
 				} else {
 					c.debug.Println("received a response for a message ID we don't know:", recv.PacketID())
 				}
 			case packets.PUBREC:
-				c.debug.Println("received pubrec")
+				c.debug.Println("received PUBREC for", recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
 					c.debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
 					pl := packets.Pubrel{
 						PacketID:   recv.Content.(*packets.Pubrec).PacketID,
 						ReasonCode: 0x92,
 					}
+					c.debug.Println("sending PUBREL for", pl.PacketID)
 					_, err := pl.WriteTo(c.Conn)
 					if err != nil {
 						c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
@@ -360,6 +366,7 @@ func (c *Client) Incoming() {
 						pl := packets.Pubrel{
 							PacketID: pr.PacketID,
 						}
+						c.debug.Println("sending PUBREL for", pl.PacketID)
 						_, err := pl.WriteTo(c.Conn)
 						if err != nil {
 							c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
@@ -367,21 +374,24 @@ func (c *Client) Incoming() {
 					}
 				}
 			case packets.PUBREL:
+				c.debug.Println("received PUBREL for", recv.PacketID())
 				//Auto respond to pubrels unless failure code
 				pr := recv.Content.(*packets.Pubrel)
-				if pr.ReasonCode < 0x80 {
+				if pr.ReasonCode >= 0x92 {
 					//Received a failure code, continue
 					continue
 				} else {
 					pc := packets.Pubcomp{
 						PacketID: pr.PacketID,
 					}
+					c.debug.Println("sending PUBCOMP for", pr.PacketID)
 					_, err := pc.WriteTo(c.Conn)
 					if err != nil {
 						c.errors.Printf("failed to send PUBCOMP for %d: %s", pc.PacketID, err)
 					}
 				}
 			case packets.DISCONNECT:
+				c.debug.Println("received DISCONNECT")
 				if c.raCtx != nil {
 					c.raCtx.Return <- *recv
 				}
@@ -393,6 +403,7 @@ func (c *Client) Incoming() {
 					c.OnClientError(fmt.Errorf("server initiated disconnect"))
 				}
 			case packets.PINGRESP:
+				c.debug.Println("received PINGRESP")
 				c.PingHandler.PingResp()
 			}
 		}
@@ -690,7 +701,6 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 		if resp.Type != packets.PUBACK {
 			return nil, fmt.Errorf("received %d instead of PUBACK", resp.Type)
 		}
-		c.debug.Println("received PUBACK for", pb.PacketID)
 		c.serverInflight.Release(1)
 
 		pr := PublishResponseFromPuback(resp.Content.(*packets.Puback))
@@ -702,7 +712,6 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	case 2:
 		switch resp.Type {
 		case packets.PUBCOMP:
-			c.debug.Println("received PUBCOMP for", pb.PacketID)
 			c.serverInflight.Release(1)
 			pr := PublishResponseFromPubcomp(resp.Content.(*packets.Pubcomp))
 			return pr, nil

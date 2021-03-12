@@ -94,6 +94,27 @@ func (c *ControlPacket) PacketID() uint16 {
 	}
 }
 
+func (c *ControlPacket) PacketType() string {
+	return [...]string{
+		"",
+		"CONNECT",
+		"CONNACK",
+		"PUBLISH",
+		"PUBACK",
+		"PUBREC",
+		"PUBREL",
+		"PUBCOMP",
+		"SUBSCRIBE",
+		"SUBACK",
+		"UNSUBSCRIBE",
+		"UNSUBACK",
+		"PINGREQ",
+		"PINGRESP",
+		"DISCONNECT",
+		"AUTH",
+	}[c.FixedHeader.Type]
+}
+
 // NewControlPacket takes a packetType and returns a pointer to a
 // ControlPacket where the VariableHeader field is a pointer to an
 // instance of a VariableHeader definition for that packetType
