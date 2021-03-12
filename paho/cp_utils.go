@@ -1,6 +1,8 @@
 package paho
 
-import "github.com/eclipse/paho.golang/packets"
+import (
+	"github.com/eclipse/paho.golang/packets"
+)
 
 // UserProperty is a struct for the user provided values
 // permitted in the properties section
@@ -12,8 +14,8 @@ type UserProperty struct {
 type UserProperties []UserProperty
 
 // Add is a helper function for easily adding a new user property
-func (u UserProperties) Add(key, value string) UserProperties {
-	u = append(u, UserProperty{key, value})
+func (u *UserProperties) Add(key, value string) *UserProperties {
+	*u = append(*u, UserProperty{key, value})
 
 	return u
 }
