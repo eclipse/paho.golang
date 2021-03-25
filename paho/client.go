@@ -3,6 +3,7 @@ package paho
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -54,6 +55,7 @@ type (
 		caCtx          *caContext
 		raCtx          *CPContext
 		stop           chan struct{}
+		publishPackets chan *packets.Publish
 		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
@@ -151,14 +153,21 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 			//already shutting down, do nothing
 		default:
 			close(c.stop)
+			close(c.publishPackets)
 		}
-		c.Conn.Close()
+		_ = c.Conn.Close()
 	}
 	if c.Conn == nil {
 		return nil, fmt.Errorf("client connection is nil")
 	}
 
 	c.stop = make(chan struct{})
+
+	var publishPacketsSize uint16 = math.MaxUint16
+	if cp.Properties != nil && cp.Properties.ReceiveMaximum != nil {
+		publishPacketsSize = *cp.Properties.ReceiveMaximum
+	}
+	c.publishPackets = make(chan *packets.Publish, publishPacketsSize)
 
 	c.debug.Println("connecting")
 	c.mu.Lock()
@@ -180,6 +189,13 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 			c.clientProps.TopicAliasMaximum = *cp.Properties.TopicAliasMaximum
 		}
 	}
+
+	c.debug.Println("starting publish packets loop")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		c.routePublishPackets()
+	}()
 
 	c.debug.Println("starting Incoming")
 	c.workers.Add(1)
@@ -268,6 +284,34 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	return ca, nil
 }
 
+func (c *Client) routePublishPackets() {
+	for pb := range c.publishPackets {
+		c.Router.Route(pb)
+		switch pb.QoS {
+		case 1:
+			pa := packets.Puback{
+				Properties: &packets.Properties{},
+				PacketID:   pb.PacketID,
+			}
+			c.debug.Println("sending PUBACK")
+			_, err := pa.WriteTo(c.Conn)
+			if err != nil {
+				c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
+			}
+		case 2:
+			pr := packets.Pubrec{
+				Properties: &packets.Properties{},
+				PacketID:   pb.PacketID,
+			}
+			c.debug.Printf("sending PUBREC")
+			_, err := pr.WriteTo(c.Conn)
+			if err != nil {
+				c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
+			}
+		}
+	}
+}
+
 // Incoming is the Client function that reads and handles incoming
 // packets from the server. The function is started as a goroutine
 // from Connect(), it exits when it receives a server initiated
@@ -314,29 +358,7 @@ func (c *Client) Incoming() {
 			case packets.PUBLISH:
 				pb := recv.Content.(*packets.Publish)
 				c.debug.Printf("received QoS%d PUBLISH", pb.QoS)
-				go c.Router.Route(pb)
-				switch pb.QoS {
-				case 1:
-					pa := packets.Puback{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					c.debug.Println("sending PUBACK")
-					_, err := pa.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
-					}
-				case 2:
-					pr := packets.Pubrec{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					c.debug.Printf("sending PUBREC")
-					_, err := pr.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
-					}
-				}
+				c.publishPackets <- pb
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 				c.debug.Printf("received %s packet with id %d", recv.PacketType(), recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
@@ -417,6 +439,7 @@ func (c *Client) close() {
 		//already shutting down, do nothing
 	default:
 		close(c.stop)
+		close(c.publishPackets)
 	}
 	c.debug.Println("client stopped")
 	c.PingHandler.Stop()
