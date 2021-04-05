@@ -74,9 +74,18 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 		defer close(c.done)
 
 		for {
-			eh := errorHandler{debug: cfg.Debug, errChan: errChan, userFun: cfg.OnClientError} // We want a single error to come through when the connection fails
+			// Error handler is used to guarantee that a single error will be received whenever the connection is lost
+			eh := errorHandler{
+				debug:                  cfg.Debug,
+				mu:                     sync.Mutex{},
+				errChan:                errChan,
+				userOnClientError:      cfg.OnClientError,
+				userOnServerDisconnect: cfg.OnServerDisconnect,
+			}
 			cliCfg := cfg.ClientConfig
 			cliCfg.OnClientError = eh.onClientError
+			cliCfg.OnServerDisconnect = eh.onServerDisconnect
+
 			cli, connAck := establishBrokerConnection(ctx, cfg)
 			if cli == nil {
 				return // Only occurs when context is cancelled

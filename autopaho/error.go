@@ -1,6 +1,7 @@
 package autopaho
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/ChIoT-Tech/paho.golang/paho"
@@ -15,11 +16,30 @@ type errorHandler struct {
 	mu      sync.Mutex
 	errChan chan error // receives connection errors
 
-	userFun func(error) // User provided onClientError function
+	userOnClientError      func(error)            // User provided onClientError function
+	userOnServerDisconnect func(*paho.Disconnect) // User provided OnServerDisconnect function
 }
 
 // onClientError called by the paho library when an error occurs. We assume that the error is always fatal
 func (e *errorHandler) onClientError(err error) {
+	e.handleError(err)
+	if e.userOnClientError != nil {
+		go e.userOnClientError(err)
+	}
+}
+
+// onClientError called by the paho library when the server requests a disconnection (for example as part of a
+// clean broker shutdown). We want to begin attempting to reconnect when this occurs (and pass a detectable error
+// to the user)
+func (e *errorHandler) onServerDisconnect(d *paho.Disconnect) {
+	e.handleError(&DisconnectError{err: fmt.Sprintf("server requested disconnect (reason: %d)", d.ReasonCode)})
+	if e.userOnServerDisconnect != nil {
+		go e.userOnServerDisconnect(d)
+	}
+}
+
+// handleError ensures that only a single error is sent to the channel (all errors go to the users OnClientError function)
+func (e *errorHandler) handleError(err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.errChan != nil {
@@ -29,7 +49,11 @@ func (e *errorHandler) onClientError(err error) {
 	} else {
 		e.debug.Printf("received extra error: %s", err)
 	}
-	if e.userFun != nil {
-		go e.userFun(err)
-	}
+}
+
+// DisconnectError will be passed when the server requests disconnection (allows this error type to be detected)
+type DisconnectError struct{ err string }
+
+func (d *DisconnectError) Error() string {
+	return d.err
 }
