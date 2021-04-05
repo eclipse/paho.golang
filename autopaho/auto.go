@@ -33,8 +33,8 @@ type ClientConfig struct {
 	KeepAlive         uint16        // Keepalive period in seconds (the maximum time interval that is permitted to elapse between the point at which the Client finishes transmitting one MQTT Control Packet and the point it starts sending the next)
 	ConnectRetryDelay time.Duration // How long to wait between connection attempts
 
-	OnConnectionUp func(*paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection)
-	OnConnectError func(error)         // Called (within a goroutine) whenever a connection attempt fails
+	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
+	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
 
 	Debug paho.Logger // NOOPLogger{},
 
@@ -76,7 +76,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			eh := errorHandler{debug: cfg.Debug, errChan: errChan, userFun: cfg.OnClientError} // We want a single error to come through when the connection fails
 			cliCfg := cfg.ClientConfig
 			cliCfg.OnClientError = eh.onClientError
-			cli := establishBrokerConnection(ctx, cfg)
+			cli, connAck := establishBrokerConnection(ctx, cfg)
 			if cli == nil {
 				return // Only occurs when context is cancelled
 			}
@@ -84,6 +84,10 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			c.cli = cli
 			c.mu.Unlock()
 			close(c.connUp)
+
+			if cfg.OnConnectionUp != nil {
+				cfg.OnConnectionUp(&c, connAck)
+			}
 
 			var err error
 			select {
