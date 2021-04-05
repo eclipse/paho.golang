@@ -117,9 +117,14 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 
 // Disconnect closes the connection (if one is up) and shuts down any active processes before returning
 // Note: We cannot currently tell when the mqtt has fully shutdown (so it may still be in the process of closing down)
-func (c *ConnectionManager) Disconnect() {
+func (c *ConnectionManager) Disconnect(ctx context.Context) error {
 	c.cancelCtx()
-	<-c.done // wait for goroutine to exit
+	select {
+	case <-c.done: // wait for goroutine to exit
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Done returns a channel that will be closed when the connection handler has shutdown cleanly
