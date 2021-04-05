@@ -1,7 +1,7 @@
 package paho
 
 import (
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/ChIoT-Tech/paho.golang/packets"
 )
 
 // UserProperty is a struct for the user provided values
