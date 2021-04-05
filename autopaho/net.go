@@ -15,7 +15,7 @@ import (
 
 // establishBrokerConnection - establishes a connection with the broker retrying until successful or the
 // context is cancelled (in which case nil will be returned).
-func establishBrokerConnection(ctx context.Context, cfg ClientConfig) *paho.Client {
+func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Client, *paho.Connack) {
 	// Note: We do not touch b.cli in order to avoid adding thread safety issues.
 	var err error
 
@@ -40,15 +40,12 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) *paho.Clie
 				}
 				ca, err := cli.Connect(ctx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
 				if err == nil {                 // Successfully connected
-					if cfg.OnConnectionUp != nil {
-						cfg.OnConnectionUp(ca)
-					}
-					return cli
+					return cli, ca
 				}
 			}
 			// Possible failure was due to context being cancelled
 			if ctx.Err() != nil {
-				return nil
+				return nil, nil
 			}
 
 			if cfg.OnConnectError != nil {
@@ -60,7 +57,7 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) *paho.Clie
 		select {
 		case <-time.After(cfg.ConnectRetryDelay):
 		case <-ctx.Done():
-			return nil
+			return nil, nil
 		}
 	}
 }
