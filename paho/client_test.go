@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/ChIoT-Tech/paho.golang/packets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
