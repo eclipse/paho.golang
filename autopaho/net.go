@@ -38,8 +38,9 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 					ClientID:   cfg.ClientID,
 					CleanStart: true,
 				}
-				ca, err := cli.Connect(ctx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
-				if err == nil {                 // Successfully connected
+				var ca *paho.Connack
+				ca, err = cli.Connect(ctx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
+				if err == nil {                // Successfully connected
 					return cli, ca
 				}
 			}
