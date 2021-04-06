@@ -18,9 +18,10 @@ import (
 // Connect to the broker and publish a message periodically
 
 const (
-	topic                = "topic1"
-	qos                  = 1
-	serverURL            = "tcp://mosquitto:1883"
+	topic = "topic1"
+	qos   = 1
+	//serverURL            = "tcp://mosquitto:1883"
+	serverURL            = "tcp://127.0.0.1:1883"
 	connectRetryDelay    = 10 * time.Second
 	delayBetweenMessages = time.Second
 	clientID             = "mqtt_publisher"
@@ -78,8 +79,8 @@ func main() {
 		defer wg.Done()
 		var count uint64
 		for {
-			// AwaitConnection will return immediately if connection is up so doing this stops publication whilst connection
-			// is unavailable.
+			// AwaitConnection will return immediately if connection is up; adding this call stops publication whilst
+			// connection is unavailable.
 			err = cm.AwaitConnection(ctx)
 			if err != nil { // Should only happen when context is cancelled
 				fmt.Printf("publisher done (AwaitConnection: %s)\n", err)
