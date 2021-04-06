@@ -21,13 +21,16 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 
 	for {
 		for _, u := range cfg.BrokerUrls {
+			connectionCtx, cancelConnCtx := context.WithTimeout(ctx, cfg.ConnectTimeout)
+
 			switch strings.ToLower(u.Scheme) {
 			case "mqtt", "tcp", "":
-				cfg.Conn, err = attemptTCPConnection(ctx, u.Host)
+				cfg.Conn, err = attemptTCPConnection(connectionCtx, u.Host)
 			case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps":
-				cfg.Conn, err = attemptTLSConnection(ctx, cfg.TlsCfg, u.Host)
+				cfg.Conn, err = attemptTLSConnection(connectionCtx, cfg.TlsCfg, u.Host)
 			default:
 				cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
+				cancelConnCtx()
 				continue
 			}
 
@@ -36,15 +39,18 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 				cp := &paho.Connect{
 					KeepAlive:  cfg.KeepAlive,
 					ClientID:   cfg.ClientID,
-					CleanStart: true,
+					CleanStart: true, // while persistence is not supported we should probably start clean...
 				}
 				var ca *paho.Connack
-				ca, err = cli.Connect(ctx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
-				if err == nil {                // Successfully connected
+				ca, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
+				if err == nil {                          // Successfully connected
+					cancelConnCtx()
 					return cli, ca
 				}
 			}
-			// Possible failure was due to context being cancelled
+			cancelConnCtx()
+
+			// Possible failure was due to outer context being cancelled
 			if ctx.Err() != nil {
 				return nil, nil
 			}
