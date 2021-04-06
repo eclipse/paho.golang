@@ -83,11 +83,11 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 				userOnClientError:      cfg.OnClientError,
 				userOnServerDisconnect: cfg.OnServerDisconnect,
 			}
-			cliCfg := cfg.ClientConfig
+			cliCfg := cfg
 			cliCfg.OnClientError = eh.onClientError
 			cliCfg.OnServerDisconnect = eh.onServerDisconnect
 
-			cli, connAck := establishBrokerConnection(ctx, cfg)
+			cli, connAck := establishBrokerConnection(ctx, cliCfg)
 			if cli == nil {
 				break mainLoop // Only occurs when context is cancelled
 			}
