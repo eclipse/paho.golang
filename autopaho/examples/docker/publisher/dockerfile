@@ -2,7 +2,10 @@
 FROM golang:alpine AS build-env
 ENV CGO_ENABLED 0
 
-ADD . /pub_src
+ADD ./go.mod /pub_src/go.mod
+ADD ./go.sum /pub_src/go.sum
+ADD ./*.go /pub_src
+
 WORKDIR /pub_src
 RUN go build -gcflags "all=-N -l" -o /pub
 

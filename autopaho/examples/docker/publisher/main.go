@@ -16,36 +16,21 @@ import (
 )
 
 // Connect to the broker and publish a message periodically
-
-const (
-	topic = "topic1"
-	qos   = 1
-	//serverURL            = "tcp://mosquitto:1883"
-	serverURL            = "tcp://127.0.0.1:1883"
-	connectRetryDelay    = 10 * time.Second
-	delayBetweenMessages = time.Second
-	clientID             = "mqtt_publisher"
-	keepAlive            = 30   // seconds
-	printMessages        = true // If true then published messages will be written to the console
-	debug                = true // autopaho and paho debug output requested
-)
-
 func main() {
-	// Enable logging by uncommenting the below
-	su, err := url.Parse(serverURL)
+	cfg, err := getConfig()
 	if err != nil {
 		panic(err)
 	}
 
-	cfg := autopaho.ClientConfig{
-		BrokerUrls:        []*url.URL{su},
-		KeepAlive:         keepAlive,
-		ConnectRetryDelay: connectRetryDelay,
+	cliCfg := autopaho.ClientConfig{
+		BrokerUrls:        []*url.URL{cfg.serverURL},
+		KeepAlive:         cfg.keepAlive,
+		ConnectRetryDelay: cfg.connectRetryDelay,
 		OnConnectionUp:    func(*autopaho.ConnectionManager, *paho.Connack) { fmt.Println("mqtt connection up") },
 		OnConnectError:    func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		Debug:             paho.NOOPLogger{},
 		ClientConfig: paho.ClientConfig{
-			ClientID:      clientID,
+			ClientID:      cfg.clientID,
 			OnClientError: func(err error) { fmt.Printf("server requested disconnect: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
@@ -57,16 +42,16 @@ func main() {
 		},
 	}
 
-	if debug {
-		cfg.Debug = logger{prefix: "autoPaho"}
-		cfg.PahoDebug = logger{prefix: "paho"}
+	if cfg.debug {
+		cliCfg.Debug = logger{prefix: "autoPaho"}
+		cliCfg.PahoDebug = logger{prefix: "paho"}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// Connect to the broker - this will return immediately after initiating the connection process
-	cm, err := autopaho.NewConnection(ctx, cfg)
+	cm, err := autopaho.NewConnection(ctx, cliCfg)
 	if err != nil {
 		panic(err)
 	}
@@ -99,21 +84,21 @@ func main() {
 			// Publish will block so we run it in a goRoutine
 			go func(msg []byte) {
 				pr, err := cm.Publish(ctx, &paho.Publish{
-					QoS:     qos,
-					Topic:   topic,
+					QoS:     cfg.qos,
+					Topic:   cfg.topic,
 					Payload: msg,
 				})
 				if err != nil {
 					fmt.Printf("error publishing: %s\n", err)
 				} else if pr.ReasonCode != 0 && pr.ReasonCode != 16 { // 16 = Server received message but there are no subscribers
 					fmt.Printf("reason code %d received\n", pr.ReasonCode)
-				} else if printMessages {
+				} else if cfg.printMessages {
 					fmt.Printf("sent message: %s\n", msg)
 				}
 			}(msg)
 
 			select {
-			case <-time.After(delayBetweenMessages):
+			case <-time.After(cfg.delayBetweenMessages):
 			case <-ctx.Done():
 				fmt.Println("publisher done")
 				return
@@ -148,5 +133,8 @@ func (l logger) Println(v ...interface{}) {
 // Printf is the library provided NOOPLogger's
 // implementation of the required interface function(){}
 func (l logger) Printf(format string, v ...interface{}) {
+	if len(format) > 0 && format[len(format)-1] != '\n' {
+		format = format + "\n" // some log calls in paho do not add \n
+	}
 	fmt.Printf(l.prefix+":"+format, v...)
 }

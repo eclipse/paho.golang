@@ -4,9 +4,10 @@ services:
     image: eclipse-mosquitto
     networks:
       - test-net
+# ports declaration not needed when running under docker but useful for debugging outside of it!
     ports:
-      - target: 8883
-        published: 8883
+      - target: 1883
+        published: 1883
         protocol: tcp
         mode: host
     volumes:
@@ -22,6 +23,16 @@ services:
         target: /mosquitto/log
   pub:
     build: publisher
+    environment:
+      pubdemo_serverURL: tcp://mosquitto:1883
+      pubdemo_clientID: mqtt_publisher
+      pubdemo_topic: topic1
+      pubdemo_qos: 1
+      pubdemo_keepAlive: 30
+      pubdemo_connectRetryDelay: 10000
+      pubdemo_delayBetweenMessages: 1000
+      pubdemo_printMessages: "true"
+      pubdemo_debug: "true"
     networks:
       - test-net
 # Dependency commented out because publisher should run (will not be all that useful) even when mosquitto is down
@@ -30,6 +41,17 @@ services:
 #      - mosquitto
   sub:
     build: subscriber
+    environment:
+      subdemo_serverURL: tcp://mosquitto:1883
+      subdemo_clientID: mqtt_subscriber
+      subdemo_topic: topic1
+      subdemo_qos: 1
+      subdemo_keepAlive: 30
+      subdemo_connectRetryDelay: 10000
+      subdemo_writeToStdout: "true"
+      subdemo_writeToDisk: "false"
+      subdemo_OutputFile: "/binds/receivedMessages.txt"
+      subdemo_debug: "true"
     networks:
       - test-net
 # Dependency commented out because subscriber should run (will not be all that useful) even when mosquitto is down

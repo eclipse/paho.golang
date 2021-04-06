@@ -15,41 +15,25 @@ import (
 	"github.com/ChIoT-Tech/paho.golang/paho"
 )
 
-const (
-	topic             = "topic1"
-	qos               = 1
-	serverURL         = "tcp://mosquitto:1883"
-	connectRetryDelay = 10 * time.Second
-	clientID          = "mqtt_subscriber"
-	keepAlive         = 30 // seconds
-
-	writeToLog  = true  // If true then received messages will be written to the console
-	writeToDisk = false // If true then received messages will be written to the file below
-	outputFile  = "/binds/receivedMessages.txt"
-
-	debug = true // autopaho and paho debug output requested
-)
-
 func main() {
-	// Create a handler that will deal with incoming messages
-	h := NewHandler(writeToDisk, outputFile, writeToLog)
-	defer h.Close()
-
-	// Enable logging by uncommenting the below
-	su, err := url.Parse(serverURL)
+	cfg, err := getConfig()
 	if err != nil {
 		panic(err)
 	}
 
-	cfg := autopaho.ClientConfig{
-		BrokerUrls:        []*url.URL{su},
-		KeepAlive:         keepAlive,
-		ConnectRetryDelay: connectRetryDelay,
+	// Create a handler that will deal with incoming messages
+	h := NewHandler(cfg.writeToDisk, cfg.outputFileName, cfg.writeToStdOut)
+	defer h.Close()
+
+	cliCfg := autopaho.ClientConfig{
+		BrokerUrls:        []*url.URL{cfg.serverURL},
+		KeepAlive:         cfg.keepAlive,
+		ConnectRetryDelay: cfg.connectRetryDelay,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
 				Subscriptions: map[string]paho.SubscribeOptions{
-					topic: {QoS: qos},
+					cfg.topic: {QoS: cfg.qos},
 				},
 			}); err != nil {
 				fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received.", err)
@@ -59,7 +43,7 @@ func main() {
 		},
 		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		ClientConfig: paho.ClientConfig{
-			ClientID: clientID,
+			ClientID: cfg.clientID,
 			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
 				h.handle(m)
 			}),
@@ -74,9 +58,9 @@ func main() {
 		},
 	}
 
-	if debug {
-		cfg.Debug = logger{prefix: "autoPaho"}
-		cfg.PahoDebug = logger{prefix: "paho"}
+	if cfg.debug {
+		cliCfg.Debug = logger{prefix: "autoPaho"}
+		cliCfg.PahoDebug = logger{prefix: "paho"}
 	}
 
 	//
@@ -84,7 +68,7 @@ func main() {
 	//
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	cm, err := autopaho.NewConnection(ctx, cfg)
+	cm, err := autopaho.NewConnection(ctx, cliCfg)
 	if err != nil {
 		panic(err)
 	}
@@ -132,5 +116,8 @@ func (l logger) Println(v ...interface{}) {
 // Printf is the library provided NOOPLogger's
 // implementation of the required interface function(){}
 func (l logger) Printf(format string, v ...interface{}) {
+	if len(format) > 0 && format[len(format)-1] != '\n' {
+		format = format + "\n" // some log calls in paho do not add \n
+	}
 	fmt.Printf(l.prefix+":"+format, v...)
 }
