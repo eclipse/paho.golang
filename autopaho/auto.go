@@ -73,6 +73,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	go func() {
 		defer close(c.done)
 
+	mainLoop:
 		for {
 			// Error handler is used to guarantee that a single error will be received whenever the connection is lost
 			eh := errorHandler{
@@ -88,7 +89,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 
 			cli, connAck := establishBrokerConnection(ctx, cfg)
 			if cli == nil {
-				return // Only occurs when context is cancelled
+				break mainLoop // Only occurs when context is cancelled
 			}
 			c.mu.Lock()
 			c.cli = cli
@@ -116,7 +117,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 				} else {
 					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s", innerCtx.Err())
 				}
-				return
+				break mainLoop
 			}
 			c.mu.Lock()
 			c.cli = nil
@@ -124,8 +125,8 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			c.mu.Unlock()
 			cfg.Debug.Printf("connection to broker lost (%s); will reconnect", err)
 		}
+		cfg.Debug.Println("connection manager has terminated")
 	}()
-	cfg.Debug.Println("connection manager has terminated")
 	return &c, nil
 }
 
