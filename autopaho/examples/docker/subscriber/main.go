@@ -85,21 +85,9 @@ func main() {
 	// We could cancel the context at this point but will call Disconnect instead (this waits for autopaho to shutdown)
 	ctx, cancel = context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	cm.Disconnect(ctx)
+	_ = cm.Disconnect(ctx)
 
 	fmt.Println("shutdown complete")
-}
-
-// subscribe will attempt to subscribe to the nominated topic
-func subscribe(mqtt *autopaho.ConnectionManager, topic string, qos byte) error {
-	if _, err := mqtt.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: map[string]paho.SubscribeOptions{
-			topic: {QoS: qos},
-		},
-	}); err != nil {
-		return err
-	}
-	return nil
 }
 
 // logger implements the paho.Logger interface
