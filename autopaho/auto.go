@@ -31,7 +31,8 @@ type ClientConfig struct {
 	BrokerUrls        []*url.URL    // URL(s) for the broker (schemes supported include 'mqtt' and 'tls')
 	TlsCfg            *tls.Config   // Configuration used when connecting using TLS
 	KeepAlive         uint16        // Keepalive period in seconds (the maximum time interval that is permitted to elapse between the point at which the Client finishes transmitting one MQTT Control Packet and the point it starts sending the next)
-	ConnectRetryDelay time.Duration // How long to wait between connection attempts
+	ConnectRetryDelay time.Duration // How long to wait between connection attempts (defaults to 10s)
+	ConnectTimeout    time.Duration // How long to wait for the connection process to complete (defaults to 10s)
 
 	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
 	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
@@ -60,6 +61,12 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	if cfg.Debug == nil {
 		cfg.Debug = paho.NOOPLogger{}
 	}
+	if cfg.ConnectRetryDelay == 0 {
+		cfg.ConnectRetryDelay = 10 * time.Second
+	}
+	if cfg.ConnectTimeout == 0 {
+		cfg.ConnectTimeout = 10 * time.Second
+	}
 
 	innerCtx, cancel := context.WithCancel(ctx)
 	c := ConnectionManager{
@@ -87,7 +94,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			cliCfg.OnClientError = eh.onClientError
 			cliCfg.OnServerDisconnect = eh.onServerDisconnect
 
-			cli, connAck := establishBrokerConnection(ctx, cliCfg)
+			cli, connAck := establishBrokerConnection(innerCtx, cliCfg)
 			if cli == nil {
 				break mainLoop // Only occurs when context is cancelled
 			}
