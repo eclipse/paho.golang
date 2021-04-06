@@ -10,10 +10,16 @@ github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210405235845-ec541e86fb96 h1:mQVbxt
 github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210405235845-ec541e86fb96/go.mod h1:nzNJDs750hP3Y61KiWN75/9Vbv/MOGaxM9ei5MGYofY=
 github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406000458-eae29e4158a4 h1:EsijZOnyMI9fn4Hl5CtcTPk2Ltfv4tUH6kXWSJf5CQk=
 github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406000458-eae29e4158a4/go.mod h1:nzNJDs750hP3Y61KiWN75/9Vbv/MOGaxM9ei5MGYofY=
+github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406051052-5a49bb033d74 h1:BS5MVFfAuY2TwGGTJnHmGJOt8k9DHhi2SsA2oXn/rGE=
+github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406051052-5a49bb033d74/go.mod h1:nzNJDs750hP3Y61KiWN75/9Vbv/MOGaxM9ei5MGYofY=
+github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406051736-c8a164afe035 h1:K4BCTJql2VgM4ZrALB8bzcjCjFMgRDruuCLTHn8sFhY=
+github.com/ChIoT-Tech/paho.golang v0.9.1-0.20210406051736-c8a164afe035/go.mod h1:nzNJDs750hP3Y61KiWN75/9Vbv/MOGaxM9ei5MGYofY=
 github.com/davecgh/go-spew v1.1.0 h1:ZDRjVQ15GmhC3fiQ8ni8+OwkZQO4DARzQgrnXU1Liz8=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/eclipse/paho.golang v0.9.1-0.20210312091038-4ce31229e581 h1:91gv1MnQwPAtxsgAXSPqESXK1fiQrp3FrAmlS8VLkOE=
 github.com/eclipse/paho.golang v0.9.1-0.20210312091038-4ce31229e581/go.mod h1:F75h6mXwEegr3MBzZw4LKtjnK/CHmsQOe2lIytckr8c=
+github.com/joho/godotenv v1.3.0 h1:Zjp+RcGpHhGlrMbJzXTrZZPrWj+1vfm90La1wgB6Bhc=
+github.com/joho/godotenv v1.3.0/go.mod h1:7hK45KPybAkOC6peb+G5yklZfMxEjkZhHbwpqxOKXbg=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

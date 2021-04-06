@@ -11,13 +11,13 @@ import (
 // handler is a simple struct that provides a function to be called when a message is received. The message is parsed
 // and the count followed by the raw message is written to the file (this makes it easier to sort the file)
 type handler struct {
-	writeToLog bool
+	writeToStdOut bool
 
 	f *os.File
 }
 
 // NewHandler creates a new output handler and opens the output file (if applicable)
-func NewHandler(writeToDisk bool, fileName string, writeToLog bool) *handler {
+func NewHandler(writeToDisk bool, fileName string, writeToStdOut bool) *handler {
 	var f *os.File
 	if writeToDisk {
 		var err error
@@ -27,8 +27,8 @@ func NewHandler(writeToDisk bool, fileName string, writeToLog bool) *handler {
 		}
 	}
 	return &handler{
-		writeToLog: writeToLog,
-		f:          f,
+		writeToStdOut: writeToStdOut,
+		f:             f,
 	}
 }
 
@@ -61,7 +61,7 @@ func (o *handler) handle(msg *paho.Publish) {
 		}
 	}
 
-	if o.writeToLog {
+	if o.writeToStdOut {
 		fmt.Printf("received message: %s\n", msg.Payload)
 	}
 }
