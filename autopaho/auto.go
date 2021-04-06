@@ -110,12 +110,12 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			case <-innerCtx.Done():
 				// As the connection is up we call disconnect to shut things down cleanly
 				if err = c.cli.Disconnect(&paho.Disconnect{ReasonCode: 0}); err != nil {
-					cfg.Debug.Printf("disconnect returned error: %s", err)
+					cfg.Debug.Printf("disconnect returned error: %s\n", err)
 				}
 				if ctx.Err() != nil { // If this is due to outer context being cancelled then this will have happened before the inner one gets cancelled.
-					cfg.Debug.Printf("broker connection handler exiting due to context: %s", ctx.Err())
+					cfg.Debug.Printf("broker connection handler exiting due to context: %s\n", ctx.Err())
 				} else {
-					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s", innerCtx.Err())
+					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())
 				}
 				break mainLoop
 			}
@@ -123,7 +123,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			c.cli = nil
 			c.connUp = make(chan struct{})
 			c.mu.Unlock()
-			cfg.Debug.Printf("connection to broker lost (%s); will reconnect", err)
+			cfg.Debug.Printf("connection to broker lost (%s); will reconnect\n", err)
 		}
 		cfg.Debug.Println("connection manager has terminated")
 	}()
