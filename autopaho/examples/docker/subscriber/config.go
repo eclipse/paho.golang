@@ -52,7 +52,7 @@ type config struct {
 // getConfig - Retrieves the configuration from the environment
 func getConfig() (config, error) {
 	exeDir, _ := os.Executable()
-	godotenv.Load(path.Join(filepath.Dir(exeDir), ".env")) // Load environment variables from .env file (will not override existing variables)
+	_ = godotenv.Load(path.Join(filepath.Dir(exeDir), ".env")) // Load environment variables from .env file (will not override existing variables)
 
 	var cfg config
 	var err error
@@ -138,7 +138,7 @@ func milliSecondsFromEnv(key string) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("environmental variable %s must be an integer", key)
 	}
-	return time.Duration(time.Duration(i) * time.Millisecond), nil
+	return time.Duration(i) * time.Millisecond, nil
 }
 
 // booleanFromEnv - Retrieves boolean from the environment (must be present and valid)
