@@ -3,6 +3,7 @@ package paho
 import (
 	"log"
 	"net"
+	"sync"
 
 	"github.com/eclipse/paho.golang/packets"
 )
@@ -21,10 +22,12 @@ func (f *fakeAuth) Authenticate(a *Auth) *Auth {
 func (f *fakeAuth) Authenticated() {}
 
 type testServer struct {
-	conn            net.Conn
-	clientConn      net.Conn
-	stop            chan struct{}
-	responses       map[byte]packets.Packet
+	conn       net.Conn
+	clientConn net.Conn
+	stop       chan struct{}
+	responses  map[byte]packets.Packet
+
+	receivedMu      sync.Mutex
 	receivedPubacks []*packets.Puback
 	receivedPubrecs []*packets.Pubrec
 }
@@ -125,7 +128,9 @@ func (t *testServer) Run() {
 
 			case packets.PUBACK:
 				log.Println("received puback", recv.Content.(*packets.Puback))
+				t.receivedMu.Lock()
 				t.receivedPubacks = append(t.receivedPubacks, recv.Content.(*packets.Puback))
+				t.receivedMu.Unlock()
 			case packets.PUBCOMP:
 				log.Println("received pubcomp", recv.Content.(*packets.Pubcomp))
 			case packets.SUBACK:
@@ -140,7 +145,9 @@ func (t *testServer) Run() {
 						log.Println(err)
 					}
 				}
+				t.receivedMu.Lock()
 				t.receivedPubrecs = append(t.receivedPubrecs, recv.Content.(*packets.Pubrec))
+				t.receivedMu.Unlock()
 			case packets.PUBREL:
 				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
 				if p, ok := t.responses[packets.PUBCOMP]; ok {
@@ -160,4 +167,24 @@ func (t *testServer) Run() {
 			}
 		}
 	}
+}
+
+func (t *testServer) ReceivedPubacks() []packets.Puback {
+	t.receivedMu.Lock()
+	defer t.receivedMu.Lock()
+	packets := make([]packets.Puback, len(t.receivedPubacks))
+	for k, v := range t.receivedPubacks {
+		packets[k] = *v
+	}
+	return packets
+}
+
+func (t *testServer) ReceivedPubrecs() []packets.Pubrec {
+	t.receivedMu.Lock()
+	defer t.receivedMu.Lock()
+	packets := make([]packets.Pubrec, len(t.receivedPubrecs))
+	for k, v := range t.receivedPubrecs {
+		packets[k] = *v
+	}
+	return packets
 }
