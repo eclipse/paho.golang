@@ -147,18 +147,23 @@ func NewClient(conf ClientConfig) *Client {
 // returned. Otherwise the failure Connack (if there is one) is returned
 // along with an error indicating the reason for the failure to connect.
 func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
+	if c.Conn == nil {
+		return nil, fmt.Errorf("client connection is nil")
+	}
+
 	cleanup := func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		defer c.workers.Wait()
+
 		select {
 		case <-c.stop:
-			//already shutting down, do nothing
+		//already shutting down, do nothing
 		default:
 			close(c.stop)
 			close(c.publishPackets)
 		}
 		_ = c.Conn.Close()
-	}
-	if c.Conn == nil {
-		return nil, fmt.Errorf("client connection is nil")
 	}
 
 	c.stop = make(chan struct{})
@@ -194,6 +199,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		defer c.debug.Println("returning from publish packets loop worker")
 		c.routePublishPackets()
 	}()
 
@@ -201,6 +207,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		defer c.debug.Println("returning from incoming worker")
 		c.Incoming()
 	}()
 
@@ -278,6 +285,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		defer c.debug.Println("returning from ping handler worker")
 		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
 	}()
 
@@ -285,28 +293,34 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 }
 
 func (c *Client) routePublishPackets() {
-	for pb := range c.publishPackets {
-		c.Router.Route(pb)
-		switch pb.QoS {
-		case 1:
-			pa := packets.Puback{
-				Properties: &packets.Properties{},
-				PacketID:   pb.PacketID,
-			}
-			c.debug.Println("sending PUBACK")
-			_, err := pa.WriteTo(c.Conn)
-			if err != nil {
-				c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
-			}
-		case 2:
-			pr := packets.Pubrec{
-				Properties: &packets.Properties{},
-				PacketID:   pb.PacketID,
-			}
-			c.debug.Printf("sending PUBREC")
-			_, err := pr.WriteTo(c.Conn)
-			if err != nil {
-				c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
+	for {
+		select {
+		case <-c.stop:
+			c.debug.Println("client stopping, routePublishPackets stopping")
+			return
+		case pb := <-c.publishPackets:
+			c.Router.Route(pb)
+			switch pb.QoS {
+			case 1:
+				pa := packets.Puback{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				c.debug.Println("sending PUBACK")
+				_, err := pa.WriteTo(c.Conn)
+				if err != nil {
+					c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
+				}
+			case 2:
+				pr := packets.Pubrec{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				c.debug.Printf("sending PUBREC")
+				_, err := pr.WriteTo(c.Conn)
+				if err != nil {
+					c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
+				}
 			}
 		}
 	}
@@ -434,6 +448,8 @@ func (c *Client) Incoming() {
 
 func (c *Client) close() {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	select {
 	case <-c.stop:
 		//already shutting down, do nothing
@@ -444,9 +460,8 @@ func (c *Client) close() {
 	c.debug.Println("client stopped")
 	c.PingHandler.Stop()
 	c.debug.Println("ping stopped")
-	c.Conn.Close()
+	_ = c.Conn.Close()
 	c.debug.Println("conn closed")
-	c.mu.Unlock()
 }
 
 // Error is called to signify that an error situation has occurred, this

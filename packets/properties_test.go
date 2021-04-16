@@ -135,7 +135,7 @@ func TestPropertiess(t *testing.T) {
 	}
 }
 
-func TestInvalidPropertiess(t *testing.T) {
+func TestInvalidProperties(t *testing.T) {
 	if ValidateID(PUBLISH, PropRequestResponseInfo) {
 		t.Fatalf("'requestReplyInfo' is invalid for 'PUBLISH' packets")
 	}
