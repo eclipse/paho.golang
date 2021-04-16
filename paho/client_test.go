@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -429,15 +430,17 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, expectedPublishPackets, actualPublishPackets)
-	require.Len(t, ts.receivedPubacks, 3)
-	require.Equal(t,
-		[]*packets.Puback{
-			{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
-			{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
-			{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
-		},
-		ts.receivedPubacks,
-	)
+	require.Len(t, ts.ReceivedPubacks(), 3)
+	require.Eventually(t, func() bool {
+		return reflect.DeepEqual(
+			[]*packets.Puback{
+				{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
+				{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
+				{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
+			},
+			ts.ReceivedPubacks(),
+		)
+	}, time.Second, 10*time.Millisecond)
 }
 
 func TestReceiveServerDisconnect(t *testing.T) {
