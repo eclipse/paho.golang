@@ -441,7 +441,7 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 		},
 		time.Second,
 		10*time.Millisecond,
-		cmp.Diff(expectedAcks, ts.receivedPubacks),
+		cmp.Diff(expectedAcks, ts.ReceivedPubacks()),
 	)
 }
 
