@@ -296,7 +296,6 @@ func (c *Client) routePublishPackets() {
 	for {
 		select {
 		case <-c.stop:
-			c.debug.Println("client stopping, routePublishPackets stopping")
 			return
 		case pb := <-c.publishPackets:
 			c.Router.Route(pb)
