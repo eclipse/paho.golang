@@ -297,7 +297,10 @@ func (c *Client) routePublishPackets() {
 		select {
 		case <-c.stop:
 			return
-		case pb := <-c.publishPackets:
+		case pb, open := <-c.publishPackets:
+			if !open {
+				return
+			}
 			c.Router.Route(pb)
 			switch pb.QoS {
 			case 1:
