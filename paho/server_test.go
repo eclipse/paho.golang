@@ -21,10 +21,12 @@ func (f *fakeAuth) Authenticate(a *Auth) *Auth {
 func (f *fakeAuth) Authenticated() {}
 
 type testServer struct {
-	conn       net.Conn
-	clientConn net.Conn
-	stop       chan struct{}
-	responses  map[byte]packets.Packet
+	conn            net.Conn
+	clientConn      net.Conn
+	stop            chan struct{}
+	responses       map[byte]packets.Packet
+	receivedPubacks []*packets.Puback
+	receivedPubrecs []*packets.Pubrec
 }
 
 func newTestServer() *testServer {
@@ -122,7 +124,8 @@ func (t *testServer) Run() {
 				}
 
 			case packets.PUBACK:
-				log.Println("recevied puback", recv.Content.(*packets.Puback))
+				log.Println("received puback", recv.Content.(*packets.Puback))
+				t.receivedPubacks = append(t.receivedPubacks, recv.Content.(*packets.Puback))
 			case packets.PUBCOMP:
 				log.Println("received pubcomp", recv.Content.(*packets.Pubcomp))
 			case packets.SUBACK:
@@ -137,6 +140,7 @@ func (t *testServer) Run() {
 						log.Println(err)
 					}
 				}
+				t.receivedPubrecs = append(t.receivedPubrecs, recv.Content.(*packets.Pubrec))
 			case packets.PUBREL:
 				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
 				if p, ok := t.responses[packets.PUBCOMP]; ok {
@@ -146,7 +150,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.DISCONNECT:
-				log.Println("recevied disconnect")
+				log.Println("received disconnect")
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
