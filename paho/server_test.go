@@ -171,20 +171,20 @@ func (t *testServer) Run() {
 
 func (t *testServer) ReceivedPubacks() []packets.Puback {
 	t.receivedMu.Lock()
-	defer t.receivedMu.Lock()
+	defer t.receivedMu.Unlock()
 	packets := make([]packets.Puback, len(t.receivedPubacks))
-	for k, v := range t.receivedPubacks {
-		packets[k] = *v
+	for k := range t.receivedPubacks {
+		packets[k] = *t.receivedPubacks[k]
 	}
 	return packets
 }
 
 func (t *testServer) ReceivedPubrecs() []packets.Pubrec {
 	t.receivedMu.Lock()
-	defer t.receivedMu.Lock()
+	defer t.receivedMu.Unlock()
 	packets := make([]packets.Pubrec, len(t.receivedPubrecs))
-	for k, v := range t.receivedPubrecs {
-		packets[k] = *v
+	for k := range t.receivedPubrecs {
+		packets[k] = *t.receivedPubrecs[k]
 	}
 	return packets
 }
