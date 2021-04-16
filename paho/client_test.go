@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -430,17 +430,19 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 	wg.Wait()
 
 	require.Equal(t, expectedPublishPackets, actualPublishPackets)
-	require.Len(t, ts.ReceivedPubacks(), 3)
-	require.Eventually(t, func() bool {
-		return reflect.DeepEqual(
-			[]*packets.Puback{
-				{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
-				{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
-				{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
-			},
-			ts.ReceivedPubacks(),
-		)
-	}, time.Second, 10*time.Millisecond)
+	expectedAcks := []packets.Puback{
+		{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
+	}
+	require.Eventually(t,
+		func() bool {
+			return cmp.Equal(expectedAcks, ts.ReceivedPubacks())
+		},
+		time.Second,
+		10*time.Millisecond,
+		cmp.Diff(expectedAcks, ts.receivedPubacks),
+	)
 }
 
 func TestReceiveServerDisconnect(t *testing.T) {
