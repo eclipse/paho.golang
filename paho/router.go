@@ -100,7 +100,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 	}
 }
 
-// SetDebug sets the logger l to be used for printing debug
+// SetDebugLogger sets the logger l to be used for printing debug
 // information for the router
 func (r *StandardRouter) SetDebugLogger(l Logger) {
 	r.debug = l
@@ -205,7 +205,7 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 	s.handler(m)
 }
 
-// SetDebug sets the logger l to be used for printing debug
+// SetDebugLogger sets the logger l to be used for printing debug
 // information for the router
 func (s *SingleHandlerRouter) SetDebugLogger(l Logger) {
 	s.debug = l

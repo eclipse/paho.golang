@@ -3,6 +3,7 @@ package paho
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -54,6 +55,7 @@ type (
 		caCtx          *caContext
 		raCtx          *CPContext
 		stop           chan struct{}
+		publishPackets chan *packets.Publish
 		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
@@ -145,20 +147,32 @@ func NewClient(conf ClientConfig) *Client {
 // returned. Otherwise the failure Connack (if there is one) is returned
 // along with an error indicating the reason for the failure to connect.
 func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
-	cleanup := func() {
-		select {
-		case <-c.stop:
-			//already shutting down, do nothing
-		default:
-			close(c.stop)
-		}
-		c.Conn.Close()
-	}
 	if c.Conn == nil {
 		return nil, fmt.Errorf("client connection is nil")
 	}
 
+	cleanup := func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		defer c.workers.Wait()
+
+		select {
+		case <-c.stop:
+		//already shutting down, do nothing
+		default:
+			close(c.stop)
+			close(c.publishPackets)
+		}
+		_ = c.Conn.Close()
+	}
+
 	c.stop = make(chan struct{})
+
+	var publishPacketsSize uint16 = math.MaxUint16
+	if cp.Properties != nil && cp.Properties.ReceiveMaximum != nil {
+		publishPacketsSize = *cp.Properties.ReceiveMaximum
+	}
+	c.publishPackets = make(chan *packets.Publish, publishPacketsSize)
 
 	c.debug.Println("connecting")
 	c.mu.Lock()
@@ -181,10 +195,19 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		}
 	}
 
+	c.debug.Println("starting publish packets loop")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		defer c.debug.Println("returning from publish packets loop worker")
+		c.routePublishPackets()
+	}()
+
 	c.debug.Println("starting Incoming")
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		defer c.debug.Println("returning from incoming worker")
 		c.Incoming()
 	}()
 
@@ -262,10 +285,47 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
+		defer c.debug.Println("returning from ping handler worker")
 		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
 	}()
 
 	return ca, nil
+}
+
+func (c *Client) routePublishPackets() {
+	for {
+		select {
+		case <-c.stop:
+			return
+		case pb, open := <-c.publishPackets:
+			if !open {
+				return
+			}
+			c.Router.Route(pb)
+			switch pb.QoS {
+			case 1:
+				pa := packets.Puback{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				c.debug.Println("sending PUBACK")
+				_, err := pa.WriteTo(c.Conn)
+				if err != nil {
+					c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
+				}
+			case 2:
+				pr := packets.Pubrec{
+					Properties: &packets.Properties{},
+					PacketID:   pb.PacketID,
+				}
+				c.debug.Printf("sending PUBREC")
+				_, err := pr.WriteTo(c.Conn)
+				if err != nil {
+					c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
+				}
+			}
+		}
+	}
 }
 
 // Incoming is the Client function that reads and handles incoming
@@ -314,29 +374,7 @@ func (c *Client) Incoming() {
 			case packets.PUBLISH:
 				pb := recv.Content.(*packets.Publish)
 				c.debug.Printf("received QoS%d PUBLISH", pb.QoS)
-				go c.Router.Route(pb)
-				switch pb.QoS {
-				case 1:
-					pa := packets.Puback{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					c.debug.Println("sending PUBACK")
-					_, err := pa.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBACK for %d: %s", pa.PacketID, err)
-					}
-				case 2:
-					pr := packets.Pubrec{
-						Properties: &packets.Properties{},
-						PacketID:   pb.PacketID,
-					}
-					c.debug.Printf("sending PUBREC")
-					_, err := pr.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBREC for %d: %s", pr.PacketID, err)
-					}
-				}
+				c.publishPackets <- pb
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 				c.debug.Printf("received %s packet with id %d", recv.PacketType(), recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
@@ -412,18 +450,20 @@ func (c *Client) Incoming() {
 
 func (c *Client) close() {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	select {
 	case <-c.stop:
 		//already shutting down, do nothing
 	default:
 		close(c.stop)
+		close(c.publishPackets)
 	}
 	c.debug.Println("client stopped")
 	c.PingHandler.Stop()
 	c.debug.Println("ping stopped")
-	c.Conn.Close()
+	_ = c.Conn.Close()
 	c.debug.Println("conn closed")
-	c.mu.Unlock()
 }
 
 // Error is called to signify that an error situation has occurred, this

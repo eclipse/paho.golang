@@ -30,6 +30,7 @@ func TestMidNoExhaustion(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10)
 	c.clientInflight = semaphore.NewWeighted(10)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -57,6 +58,7 @@ func TestMidExhaustion(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10)
 	c.clientInflight = semaphore.NewWeighted(10)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
 
 	cp := &CPContext{}
