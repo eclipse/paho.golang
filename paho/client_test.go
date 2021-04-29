@@ -2,12 +2,15 @@ package paho
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
@@ -99,6 +102,7 @@ func TestClientSubscribe(t *testing.T) {
 	c.SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
 
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -133,6 +137,7 @@ func TestClientUnsubscribe(t *testing.T) {
 	c.SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
 
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -164,6 +169,7 @@ func TestClientPublishQoS0(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -197,6 +203,7 @@ func TestClientPublishQoS1(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -235,6 +242,7 @@ func TestClientPublishQoS2(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -272,8 +280,10 @@ func TestClientReceiveQoS0(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/0",
@@ -306,8 +316,10 @@ func TestClientReceiveQoS1(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/1",
@@ -340,8 +352,10 @@ func TestClientReceiveQoS2(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
 		Topic:   "test/2",
@@ -351,6 +365,84 @@ func TestClientReceiveQoS2(t *testing.T) {
 	require.NoError(t, err)
 
 	<-rChan
+}
+
+func TestClientReceiveAndAckInOrder(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	var (
+		wg                   sync.WaitGroup
+		actualPublishPackets []packets.Publish
+		expectedPacketsCount = 3
+	)
+
+	wg.Add(expectedPacketsCount)
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+		Router: NewSingleHandlerRouter(func(p *Publish) {
+			defer wg.Done()
+			actualPublishPackets = append(actualPublishPackets, *p.Packet())
+		}),
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	t.Cleanup(c.close)
+
+	ctx := context.Background()
+	ca, err := c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	var expectedPublishPackets []packets.Publish
+	for i := 1; i <= expectedPacketsCount; i++ {
+		p := packets.Publish{
+			PacketID: uint16(i),
+			Topic:    fmt.Sprintf("test/%d", i),
+			Payload:  []byte(fmt.Sprintf("test payload %d", i)),
+			QoS:      1,
+			Properties: &packets.Properties{
+				User: make([]packets.User, 0),
+			},
+		}
+		expectedPublishPackets = append(expectedPublishPackets, p)
+		require.NoError(t, ts.SendPacket(&p))
+	}
+
+	wg.Wait()
+
+	require.Equal(t, expectedPublishPackets, actualPublishPackets)
+	expectedAcks := []packets.Puback{
+		{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
+	}
+	require.Eventually(t,
+		func() bool {
+			return cmp.Equal(expectedAcks, ts.ReceivedPubacks())
+		},
+		time.Second,
+		10*time.Millisecond,
+		cmp.Diff(expectedAcks, ts.ReceivedPubacks()),
+	)
 }
 
 func TestReceiveServerDisconnect(t *testing.T) {
@@ -373,6 +465,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
@@ -405,6 +498,7 @@ func TestAuthenticate(t *testing.T) {
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
 	go c.Incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 

@@ -8,8 +8,9 @@ import (
 )
 
 type (
-	// Publish is a reporesentation of the MQTT Publish packet
+	// Publish is a representation of the MQTT Publish packet
 	Publish struct {
+		PacketID   uint16
 		QoS        byte
 		Retain     bool
 		Topic      string
@@ -51,10 +52,11 @@ func (p *Publish) InitProperties(prop *packets.Properties) {
 // returns a paho library Publish
 func PublishFromPacketPublish(p *packets.Publish) *Publish {
 	v := &Publish{
-		QoS:     p.QoS,
-		Retain:  p.Retain,
-		Topic:   p.Topic,
-		Payload: p.Payload,
+		PacketID: p.PacketID,
+		QoS:      p.QoS,
+		Retain:   p.Retain,
+		Topic:    p.Topic,
+		Payload:  p.Payload,
 	}
 	v.InitProperties(p.Properties)
 
@@ -65,10 +67,11 @@ func PublishFromPacketPublish(p *packets.Publish) *Publish {
 // on which it is called
 func (p *Publish) Packet() *packets.Publish {
 	v := &packets.Publish{
-		QoS:     p.QoS,
-		Retain:  p.Retain,
-		Topic:   p.Topic,
-		Payload: p.Payload,
+		PacketID: p.PacketID,
+		QoS:      p.QoS,
+		Retain:   p.Retain,
+		Topic:    p.Topic,
+		Payload:  p.Payload,
 	}
 	if p.Properties != nil {
 		v.Properties = &packets.Properties{

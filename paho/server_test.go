@@ -3,6 +3,7 @@ package paho
 import (
 	"log"
 	"net"
+	"sync"
 
 	"github.com/eclipse/paho.golang/packets"
 )
@@ -25,6 +26,10 @@ type testServer struct {
 	clientConn net.Conn
 	stop       chan struct{}
 	responses  map[byte]packets.Packet
+
+	receivedMu      sync.Mutex
+	receivedPubacks []*packets.Puback
+	receivedPubrecs []*packets.Pubrec
 }
 
 func newTestServer() *testServer {
@@ -122,7 +127,10 @@ func (t *testServer) Run() {
 				}
 
 			case packets.PUBACK:
-				log.Println("recevied puback", recv.Content.(*packets.Puback))
+				log.Println("received puback", recv.Content.(*packets.Puback))
+				t.receivedMu.Lock()
+				t.receivedPubacks = append(t.receivedPubacks, recv.Content.(*packets.Puback))
+				t.receivedMu.Unlock()
 			case packets.PUBCOMP:
 				log.Println("received pubcomp", recv.Content.(*packets.Pubcomp))
 			case packets.SUBACK:
@@ -137,6 +145,9 @@ func (t *testServer) Run() {
 						log.Println(err)
 					}
 				}
+				t.receivedMu.Lock()
+				t.receivedPubrecs = append(t.receivedPubrecs, recv.Content.(*packets.Pubrec))
+				t.receivedMu.Unlock()
 			case packets.PUBREL:
 				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
 				if p, ok := t.responses[packets.PUBCOMP]; ok {
@@ -146,7 +157,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.DISCONNECT:
-				log.Println("recevied disconnect")
+				log.Println("received disconnect")
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
@@ -156,4 +167,24 @@ func (t *testServer) Run() {
 			}
 		}
 	}
+}
+
+func (t *testServer) ReceivedPubacks() []packets.Puback {
+	t.receivedMu.Lock()
+	defer t.receivedMu.Unlock()
+	packets := make([]packets.Puback, len(t.receivedPubacks))
+	for k := range t.receivedPubacks {
+		packets[k] = *t.receivedPubacks[k]
+	}
+	return packets
+}
+
+func (t *testServer) ReceivedPubrecs() []packets.Pubrec {
+	t.receivedMu.Lock()
+	defer t.receivedMu.Unlock()
+	packets := make([]packets.Pubrec, len(t.receivedPubrecs))
+	for k := range t.receivedPubrecs {
+		packets[k] = *t.receivedPubrecs[k]
+	}
+	return packets
 }
