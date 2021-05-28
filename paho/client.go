@@ -778,10 +778,11 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 func (c *Client) Disconnect(d *Disconnect) error {
 	c.debug.Println("disconnecting")
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	defer func() { _ = c.Conn.Close() }()
-
 	_, err := d.Packet().WriteTo(c.Conn)
+	c.mu.Unlock()
+
+	c.close()
+	c.workers.Wait() // wait anyway in case close was already called
 
 	return err
 }

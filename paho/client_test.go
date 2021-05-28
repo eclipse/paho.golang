@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"sync"
@@ -566,6 +567,49 @@ func TestCleanup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, uint8(0), ca.ReasonCode)
+}
+
+func TestDisconnect(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	t.Cleanup(c.close)
+
+	ctx := context.Background()
+	ca, err := c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	err = c.Disconnect(&Disconnect{})
+	require.NoError(t, err)
+	require.True(t, isChannelClosed(c.stop))
+
+	// disconnect again should return an error but not block
+	err = c.Disconnect(&Disconnect{})
+	require.True(t, errors.Is(err, io.ErrClosedPipe))
 }
 
 func isChannelClosed(ch chan struct{}) (closed bool) {
