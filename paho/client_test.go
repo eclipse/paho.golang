@@ -2,6 +2,7 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -515,4 +516,65 @@ func TestAuthenticate(t *testing.T) {
 	assert.True(t, ar.Success)
 
 	time.Sleep(10 * time.Millisecond)
+}
+
+func TestCleanup(t *testing.T) {
+	ts := newTestServer()
+	go ts.Run()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // canceling to make the client fail on the connection attempt
+	ca, err := c.Connect(ctx, &Connect{
+		ClientID: "testClient",
+	})
+	require.True(t, errors.Is(err, context.Canceled))
+	require.Nil(t, ca)
+
+	// verify that client was closed properly
+	require.True(t, isChannelClosed(c.stop))
+
+	// verify that it's possible to try again
+	ts.Stop()
+	ts = newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	ctx = context.Background()
+	c.Conn = ts.ClientConn()
+	ca, err = c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+}
+
+func isChannelClosed(ch chan struct{}) (closed bool) {
+	defer func() {
+		err, ok := recover().(error)
+		if ok && err.Error() == "send on closed channel" {
+			closed = true
+		}
+	}()
+	ch <- struct{}{}
+	return
 }
