@@ -152,8 +152,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 
 	cleanup := func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
 		defer c.workers.Wait()
 
 		select {
@@ -233,11 +231,11 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	var cap *packets.Connack
 	select {
 	case <-connCtx.Done():
-		if e := connCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for CONNACK")
-			cleanup()
-			return nil, e
+		if ctxErr := connCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
 		}
+		cleanup()
+		return nil, connCtx.Err()
 	case cap = <-c.caCtx.Return:
 	}
 
@@ -449,16 +447,20 @@ func (c *Client) Incoming() {
 }
 
 func (c *Client) close() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	select {
 	case <-c.stop:
 		//already shutting down, do nothing
+		return
 	default:
-		close(c.stop)
-		close(c.publishPackets)
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	defer c.workers.Wait()
+
+	close(c.stop)
+	close(c.publishPackets)
+
 	c.debug.Println("client stopped")
 	c.PingHandler.Stop()
 	c.debug.Println("ping stopped")
@@ -777,7 +779,7 @@ func (c *Client) Disconnect(d *Disconnect) error {
 	c.debug.Println("disconnecting")
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	defer c.Conn.Close()
+	defer func() { _ = c.Conn.Close() }()
 
 	_, err := d.Packet().WriteTo(c.Conn)
 
