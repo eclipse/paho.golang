@@ -501,9 +501,9 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	var rp packets.ControlPacket
 	select {
 	case <-ctx.Done():
-		if e := ctx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for Auth to complete")
-			return nil, e
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case rp = <-c.raCtx.Return:
 	}
@@ -568,9 +568,9 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 	select {
 	case <-subCtx.Done():
-		if e := subCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for SUBACK")
-			return nil, e
+		if ctxErr := subCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case sap = <-cpCtx.Return:
 	}
@@ -631,9 +631,9 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 	select {
 	case <-unsubCtx.Done():
-		if e := unsubCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for UNSUBACK")
-			return nil, e
+		if ctxErr := unsubCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case uap = <-cpCtx.Return:
 	}
@@ -731,9 +731,9 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 
 	select {
 	case <-pubCtx.Done():
-		if e := pubCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for Publish response")
-			return nil, e
+		if ctxErr := pubCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case resp = <-cpCtx.Return:
 	}
