@@ -105,7 +105,7 @@ func TestClientSubscribe(t *testing.T) {
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	s := &Subscribe{
@@ -140,7 +140,7 @@ func TestClientUnsubscribe(t *testing.T) {
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	u := &Unsubscribe{
@@ -172,7 +172,7 @@ func TestClientPublishQoS0(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	p := &Publish{
@@ -206,7 +206,7 @@ func TestClientPublishQoS1(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	p := &Publish{
@@ -245,7 +245,7 @@ func TestClientPublishQoS2(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	p := &Publish{
@@ -283,7 +283,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 	go c.routePublishPackets()
 
@@ -319,7 +319,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 	go c.routePublishPackets()
 
@@ -355,7 +355,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 	go c.routePublishPackets()
 
@@ -468,7 +468,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	err := ts.SendPacket(&packets.Disconnect{
@@ -501,7 +501,7 @@ func TestAuthenticate(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
@@ -556,7 +556,10 @@ func TestCleanup(t *testing.T) {
 	defer ts.Stop()
 
 	ctx = context.Background()
-	c.Conn = ts.ClientConn()
+	c = NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
 	ca, err = c.Connect(ctx, &Connect{
 		KeepAlive:  30,
 		ClientID:   "testClient",
@@ -610,6 +613,54 @@ func TestDisconnect(t *testing.T) {
 	// disconnect again should return an error but not block
 	err = c.Disconnect(&Disconnect{})
 	require.True(t, errors.Is(err, io.ErrClosedPipe))
+}
+
+func TestCloseDeadlock(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
+
+	ctx := context.Background()
+	ca, err := c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	routines := 100
+	wg := sync.WaitGroup{}
+	wg.Add(routines * 2)
+	for i := 0; i < routines; i++ {
+		go func() {
+			defer wg.Done()
+			c.close()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = c.Disconnect(&Disconnect{})
+		}()
+	}
+	wg.Wait()
 }
 
 func isChannelClosed(ch chan struct{}) (closed bool) {
