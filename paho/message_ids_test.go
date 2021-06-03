@@ -31,7 +31,7 @@ func TestMidNoExhaustion(t *testing.T) {
 	c.clientInflight = semaphore.NewWeighted(10)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.Incoming()
+	go c.incoming()
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	for i := 0; i < 70000; i++ {

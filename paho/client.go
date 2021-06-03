@@ -49,10 +49,7 @@ type (
 	Client struct {
 		mu sync.Mutex
 		ClientConfig
-		// caCtx is used for synchronously handling the connect/connack
-		// flow, raCtx is used for handling the MQTTv5 authentication
-		// exchange.
-		caCtx          *caContext
+		// raCtx is used for handling the MQTTv5 authentication exchange.
 		raCtx          *CPContext
 		stop           chan struct{}
 		publishPackets chan *packets.Publish
@@ -129,7 +126,7 @@ func NewClient(conf ClientConfig) *Client {
 	}
 	if c.PingHandler == nil {
 		c.PingHandler = DefaultPingerWithCustomFailHandler(func(e error) {
-			c.Error(e)
+			c.error(e)
 		})
 	}
 	if c.OnClientError == nil {
@@ -152,20 +149,13 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 
 	cleanup := func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		defer c.workers.Wait()
-
-		select {
-		case <-c.stop:
-		//already shutting down, do nothing
-		default:
-			close(c.stop)
-			close(c.publishPackets)
-		}
+		close(c.stop)
+		close(c.publishPackets)
 		_ = c.Conn.Close()
+		c.mu.Unlock()
 	}
 
+	c.mu.Lock()
 	c.stop = make(chan struct{})
 
 	var publishPacketsSize uint16 = math.MaxUint16
@@ -173,10 +163,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		publishPacketsSize = *cp.Properties.ReceiveMaximum
 	}
 	c.publishPackets = make(chan *packets.Publish, publishPacketsSize)
-
-	c.debug.Println("connecting")
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	keepalive := cp.KeepAlive
 	c.ClientID = cp.ClientID
@@ -195,31 +181,11 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		}
 	}
 
-	c.debug.Println("starting publish packets loop")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		defer c.debug.Println("returning from publish packets loop worker")
-		c.routePublishPackets()
-	}()
-
-	c.debug.Println("starting Incoming")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		defer c.debug.Println("returning from incoming worker")
-		c.Incoming()
-	}()
-
+	c.debug.Println("connecting")
 	connCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
 	defer cf()
-	c.caCtx = &caContext{connCtx, make(chan *packets.Connack, 1)}
-	defer func() {
-		c.caCtx = nil
-	}()
 
 	ccp := cp.Packet()
-
 	ccp.ProtocolName = "MQTT"
 	ccp.ProtocolVersion = 5
 
@@ -230,18 +196,27 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 
 	c.debug.Println("waiting for CONNACK")
-	var cap *packets.Connack
+	var (
+		caPacket    *packets.Connack
+		caPacketCh  = make(chan *packets.Connack)
+		caPacketErr = make(chan error)
+	)
+	go c.expectConnack(caPacketCh, caPacketErr)
 	select {
 	case <-connCtx.Done():
-		if e := connCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for CONNACK")
-			cleanup()
-			return nil, e
+		if ctxErr := connCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
 		}
-	case cap = <-c.caCtx.Return:
+		cleanup()
+		return nil, connCtx.Err()
+	case err := <-caPacketErr:
+		c.debug.Println(err)
+		cleanup()
+		return nil, err
+	case caPacket = <-caPacketCh:
 	}
 
-	ca := ConnackFromPacketConnack(cap)
+	ca := ConnackFromPacketConnack(caPacket)
 
 	if ca.ReasonCode >= 0x80 {
 		var reason string
@@ -252,6 +227,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		cleanup()
 		return ca, fmt.Errorf("failed to connect to server: %s", reason)
 	}
+
+	// no more possible calls to cleanup(), defer an unlock
+	defer c.mu.Unlock()
 
 	if ca.Properties != nil {
 		if ca.Properties.ServerKeepAlive != nil {
@@ -287,6 +265,22 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		defer c.workers.Done()
 		defer c.debug.Println("returning from ping handler worker")
 		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
+	}()
+
+	c.debug.Println("starting publish packets loop")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		defer c.debug.Println("returning from publish packets loop worker")
+		c.routePublishPackets()
+	}()
+
+	c.debug.Println("starting incoming")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		defer c.debug.Println("returning from incoming worker")
+		c.incoming()
 	}()
 
 	return ca, nil
@@ -328,30 +322,27 @@ func (c *Client) routePublishPackets() {
 	}
 }
 
-// Incoming is the Client function that reads and handles incoming
+// incoming is the Client function that reads and handles incoming
 // packets from the server. The function is started as a goroutine
 // from Connect(), it exits when it receives a server initiated
 // Disconnect, the Stop channel is closed or there is an error reading
 // a packet from the network connection
-func (c *Client) Incoming() {
+func (c *Client) incoming() {
 	for {
 		select {
 		case <-c.stop:
-			c.debug.Println("client stopping, Incoming stopping")
+			c.debug.Println("client stopping, incoming stopping")
 			return
 		default:
 			recv, err := packets.ReadPacket(c.Conn)
 			if err != nil {
-				c.Error(err)
+				c.error(err)
 				return
 			}
 			switch recv.Type {
 			case packets.CONNACK:
 				c.debug.Println("received CONNACK")
-				cap := recv.Content.(*packets.Connack)
-				if c.caCtx != nil {
-					c.caCtx.Return <- cap
-				}
+				c.error(fmt.Errorf("received unexpected CONNACK"))
 			case packets.AUTH:
 				c.debug.Println("received AUTH")
 				ap := recv.Content.(*packets.Auth)
@@ -366,7 +357,7 @@ func (c *Client) Incoming() {
 				case 0x18:
 					if c.AuthHandler != nil {
 						if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
-							c.Error(err)
+							c.error(err)
 							return
 						}
 					}
@@ -455,10 +446,13 @@ func (c *Client) close() {
 	select {
 	case <-c.stop:
 		//already shutting down, do nothing
+		return
 	default:
-		close(c.stop)
-		close(c.publishPackets)
 	}
+
+	close(c.stop)
+	close(c.publishPackets)
+
 	c.debug.Println("client stopped")
 	c.PingHandler.Stop()
 	c.debug.Println("ping stopped")
@@ -466,11 +460,11 @@ func (c *Client) close() {
 	c.debug.Println("conn closed")
 }
 
-// Error is called to signify that an error situation has occurred, this
+// error is called to signify that an error situation has occurred, this
 // causes the client's Stop channel to be closed (if it hasn't already been)
 // which results in the other client goroutines terminating.
 // It also closes the client network connection.
-func (c *Client) Error(e error) {
+func (c *Client) error(e error) {
 	c.debug.Println("error called:", e)
 	c.close()
 	go c.OnClientError(e)
@@ -499,9 +493,9 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	var rp packets.ControlPacket
 	select {
 	case <-ctx.Done():
-		if e := ctx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for Auth to complete")
-			return nil, e
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case rp = <-c.raCtx.Return:
 	}
@@ -566,9 +560,9 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 	select {
 	case <-subCtx.Done():
-		if e := subCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for SUBACK")
-			return nil, e
+		if ctxErr := subCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case sap = <-cpCtx.Return:
 	}
@@ -629,9 +623,9 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 	select {
 	case <-unsubCtx.Done():
-		if e := unsubCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for UNSUBACK")
-			return nil, e
+		if ctxErr := unsubCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case uap = <-cpCtx.Return:
 	}
@@ -729,9 +723,9 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 
 	select {
 	case <-pubCtx.Done():
-		if e := pubCtx.Err(); e == context.DeadlineExceeded {
-			c.debug.Println("timeout waiting for Publish response")
-			return nil, e
+		if ctxErr := pubCtx.Err(); ctxErr != nil {
+			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
+			return nil, ctxErr
 		}
 	case resp = <-cpCtx.Return:
 	}
@@ -769,17 +763,30 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	return nil, fmt.Errorf("ended up with a non QoS1/2 message: %d", pb.QoS)
 }
 
+func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error) {
+	recv, err := packets.ReadPacket(c.Conn)
+	if err != nil {
+		errs <- err
+		return
+	}
+	if recv.Type != packets.CONNACK {
+		errs <- fmt.Errorf("received unexpected packet %v", recv.Type)
+		return
+	}
+	c.debug.Println("received CONNACK")
+	packet <- recv.Content.(*packets.Connack)
+}
+
 // Disconnect is used to send a Disconnect packet to the MQTT server
 // Whether or not the attempt to send the Disconnect packet fails
 // (and if it does this function returns any error) the network connection
 // is closed.
 func (c *Client) Disconnect(d *Disconnect) error {
 	c.debug.Println("disconnecting")
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	defer c.Conn.Close()
-
 	_, err := d.Packet().WriteTo(c.Conn)
+
+	c.close()
+	c.workers.Wait()
 
 	return err
 }
