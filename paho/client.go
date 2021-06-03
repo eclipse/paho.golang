@@ -203,19 +203,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		caPacketCh  = make(chan *packets.Connack)
 		caPacketErr = make(chan error)
 	)
-	go func() {
-		recv, err := packets.ReadPacket(c.Conn)
-		if err != nil {
-			caPacketErr <- err
-			return
-		}
-		if recv.Type != packets.CONNACK {
-			caPacketErr <- fmt.Errorf("received unexpected packet %v", recv.Type)
-			return
-		}
-		c.debug.Println("received CONNACK")
-		caPacketCh <- recv.Content.(*packets.Connack)
-	}()
+	go c.expectConnack(caPacketCh, caPacketErr)
 	select {
 	case <-connCtx.Done():
 		if ctxErr := connCtx.Err(); ctxErr != nil {
@@ -775,6 +763,20 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 
 	c.debug.Println("ended up with a non QoS1/2 message:", pb.QoS)
 	return nil, fmt.Errorf("ended up with a non QoS1/2 message: %d", pb.QoS)
+}
+
+func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error) {
+	recv, err := packets.ReadPacket(c.Conn)
+	if err != nil {
+		errs <- err
+		return
+	}
+	if recv.Type != packets.CONNACK {
+		errs <- fmt.Errorf("received unexpected packet %v", recv.Type)
+		return
+	}
+	c.debug.Println("received CONNACK")
+	packet <- recv.Content.(*packets.Connack)
 }
 
 // Disconnect is used to send a Disconnect packet to the MQTT server
