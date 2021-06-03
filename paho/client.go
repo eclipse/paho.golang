@@ -49,9 +49,7 @@ type (
 	Client struct {
 		mu sync.Mutex
 		ClientConfig
-		// caCtx is used for synchronously handling the connect/connack
-		// flow, raCtx is used for handling the MQTTv5 authentication
-		// exchange.
+		// raCtx is used for handling the MQTTv5 authentication exchange.
 		raCtx          *CPContext
 		stop           chan struct{}
 		publishPackets chan *packets.Publish
