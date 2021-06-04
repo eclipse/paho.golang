@@ -2,6 +2,7 @@ package paho
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -20,30 +21,46 @@ const (
 	MQTTv5   MQTTVersion = 5
 )
 
+const defaultSendAckInterval = 50 * time.Millisecond
+
+var (
+	ErrManualAcknowledgmentDisabled = errors.New("manual acknowledgments disabled")
+)
+
 type (
 	// ClientConfig are the user configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PingHandler, PacketTimeout and Router.
 	ClientConfig struct {
-		ClientID           string
-		Conn               net.Conn
-		MIDs               MIDService
-		AuthHandler        Auther
-		PingHandler        Pinger
-		Router             Router
-		Persistence        Persistence
-		PacketTimeout      time.Duration
+		ClientID      string
+		Conn          net.Conn
+		MIDs          MIDService
+		AuthHandler   Auther
+		PingHandler   Pinger
+		Router        Router
+		Persistence   Persistence
+		PacketTimeout time.Duration
+		// OnServerDisconnect is called only when a packets.DISCONNECT is received from server
 		OnServerDisconnect func(*Disconnect)
-		// Only called when receiving packets.DISCONNECT from server
+		// OnClientError is for example called on net.Error
 		OnClientError func(error)
-		// Client error call, For example: net.Error
-		PublishHook func(*Publish)
 		// PublishHook allows a user provided function to be called before
 		// a Publish packet is sent allowing it to inspect or modify the
 		// Publish, an example of the utility of this is provided in the
 		// Topic Alias Handler extension which will automatically assign
 		// and use topic alias values rather than topic strings.
+		PublishHook func(*Publish)
+		// EnableManualAcknowledgment is used to control the acknowledgment of packets manually.
+		// BEWARE that the MQTT specs require clients to send acknowledgments in the order in which the corresponding
+		// PUBLISH packets were received.
+		// Consider the following scenario: the client receives packets 1,2,3,4
+		// If you acknowledge 3 first, no ack is actually sent to the server but it's buffered until also 1 and 2
+		// are acknowledged.
+		EnableManualAcknowledgment bool
+		// SendAcksInterval is used only when EnableManualAcknowledgment is true
+		// it determines how often the client tries to send a batch of acknowledgments in the right order
+		SendAcksInterval time.Duration
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -53,6 +70,7 @@ type (
 		raCtx          *CPContext
 		stop           chan struct{}
 		publishPackets chan *packets.Publish
+		acksTracker    acksTracker
 		workers        sync.WaitGroup
 		serverProps    CommsProperties
 		clientProps    CommsProperties
@@ -283,7 +301,71 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		c.incoming()
 	}()
 
+	if c.EnableManualAcknowledgment {
+		c.debug.Println("starting acking routine")
+
+		c.acksTracker.reset()
+		sendAcksInterval := defaultSendAckInterval
+		if c.SendAcksInterval != 0 {
+			sendAcksInterval = c.SendAcksInterval
+		}
+
+		c.workers.Add(1)
+		go func() {
+			defer c.workers.Done()
+			defer c.debug.Println("returning from ack tracker routine")
+			t := time.NewTicker(sendAcksInterval)
+			for {
+				select {
+				case <-c.stop:
+					return
+				case <-t.C:
+					c.acksTracker.flush(func(pbs []*packets.Publish) {
+						for _, pb := range pbs {
+							c.ack(pb)
+						}
+					})
+				}
+			}
+		}()
+	}
+
 	return ca, nil
+}
+
+func (c *Client) Ack(pb *Publish) error {
+	if !c.EnableManualAcknowledgment {
+		return ErrManualAcknowledgmentDisabled
+	}
+	if pb.QoS == 0 {
+		return nil
+	}
+	return c.acksTracker.markAsAcked(pb.Packet())
+}
+
+func (c *Client) ack(pb *packets.Publish) {
+	switch pb.QoS {
+	case 1:
+		pa := packets.Puback{
+			Properties: &packets.Properties{},
+			PacketID:   pb.PacketID,
+		}
+		c.debug.Println("sending PUBACK")
+		_, err := pa.WriteTo(c.Conn)
+		if err != nil {
+			c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
+		}
+	case 2:
+		pr := packets.Pubrec{
+			Properties: &packets.Properties{},
+			PacketID:   pb.PacketID,
+		}
+		c.debug.Printf("sending PUBREC")
+		_, err := pr.WriteTo(c.Conn)
+		if err != nil {
+			c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
+		}
+	}
 }
 
 func (c *Client) routePublishPackets() {
@@ -295,29 +377,18 @@ func (c *Client) routePublishPackets() {
 			if !open {
 				return
 			}
-			c.Router.Route(pb)
-			switch pb.QoS {
-			case 1:
-				pa := packets.Puback{
-					Properties: &packets.Properties{},
-					PacketID:   pb.PacketID,
-				}
-				c.debug.Println("sending PUBACK")
-				_, err := pa.WriteTo(c.Conn)
-				if err != nil {
-					c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
-				}
-			case 2:
-				pr := packets.Pubrec{
-					Properties: &packets.Properties{},
-					PacketID:   pb.PacketID,
-				}
-				c.debug.Printf("sending PUBREC")
-				_, err := pr.WriteTo(c.Conn)
-				if err != nil {
-					c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
-				}
+
+			if !c.ClientConfig.EnableManualAcknowledgment {
+				c.Router.Route(pb)
+				c.ack(pb)
+				continue
 			}
+
+			if pb.QoS != 0 {
+				c.acksTracker.add(pb)
+			}
+
+			c.Router.Route(pb)
 		}
 	}
 }
@@ -458,6 +529,8 @@ func (c *Client) close() {
 	c.debug.Println("ping stopped")
 	_ = c.Conn.Close()
 	c.debug.Println("conn closed")
+	c.acksTracker.reset()
+	c.debug.Println("acks tracker reset")
 }
 
 // error is called to signify that an error situation has occurred, this
