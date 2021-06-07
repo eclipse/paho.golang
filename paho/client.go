@@ -59,7 +59,7 @@ type (
 		// are acknowledged.
 		EnableManualAcknowledgment bool
 		// SendAcksInterval is used only when EnableManualAcknowledgment is true
-		// it determines how often the client tries to send a batch of acknowledgments in the right order
+		// it determines how often the client tries to send a batch of acknowledgments in the right order to the server.
 		SendAcksInterval time.Duration
 	}
 	// Client is the struct representing an MQTT client
@@ -306,7 +306,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 		c.acksTracker.reset()
 		sendAcksInterval := defaultSendAckInterval
-		if c.SendAcksInterval != 0 {
+		if c.SendAcksInterval > 0 {
 			sendAcksInterval = c.SendAcksInterval
 		}
 

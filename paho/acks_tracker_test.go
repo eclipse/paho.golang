@@ -17,6 +17,12 @@ func TestAcksTracker(t *testing.T) {
 		p4 = &packets.Publish{PacketID: 4} // to test not found
 	)
 
+	t.Run("flush-empty", func(t *testing.T) {
+		at.flush(func(_ []*packets.Publish) {
+			t.Fatal("flush should not call 'do' since no packets have been added nor acknowledged")
+		})
+	})
+
 	t.Run("flush-without-acking", func(t *testing.T) {
 		at.add(p1)
 		at.add(p2)
@@ -73,7 +79,7 @@ func TestAcksTracker(t *testing.T) {
 
 	t.Run("flush-after-acking-everything", func(t *testing.T) {
 		at.flush(func(_ []*packets.Publish) {
-			t.Fatal("no call to 'do' expected, we flushed all packets")
+			t.Fatal("no call to 'do' expected, we flushed all packets already")
 		})
 	})
 }
