@@ -328,10 +328,10 @@ func (c *Client) routePublishPackets() {
 // Disconnect, the Stop channel is closed or there is an error reading
 // a packet from the network connection
 func (c *Client) incoming() {
+	defer c.debug.Println("client stopping, incoming stopping")
 	for {
 		select {
 		case <-c.stop:
-			c.debug.Println("client stopping, incoming stopping")
 			return
 		default:
 			recv, err := packets.ReadPacket(c.Conn)
@@ -365,7 +365,15 @@ func (c *Client) incoming() {
 			case packets.PUBLISH:
 				pb := recv.Content.(*packets.Publish)
 				c.debug.Printf("received QoS%d PUBLISH", pb.QoS)
-				c.publishPackets <- pb
+				c.mu.Lock()
+				select {
+				case <-c.stop:
+					c.mu.Unlock()
+					return
+				default:
+					c.publishPackets <- pb
+					c.mu.Unlock()
+				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
 				c.debug.Printf("received %s packet with id %d", recv.PacketType(), recv.PacketID())
 				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
@@ -477,12 +485,18 @@ func (c *Client) error(e error) {
 // is received.
 func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, error) {
 	c.debug.Println("client initiated reauthentication")
-	c.mu.Lock()
-	defer c.mu.Unlock()
 
+	c.mu.Lock()
+	if c.raCtx != nil {
+		c.mu.Unlock()
+		return nil, fmt.Errorf("previous authentication is still in progress")
+	}
 	c.raCtx = &CPContext{ctx, make(chan packets.ControlPacket, 1)}
+	c.mu.Unlock()
 	defer func() {
+		c.mu.Lock()
 		c.raCtx = nil
+		c.mu.Unlock()
 	}()
 
 	c.debug.Println("sending AUTH")
