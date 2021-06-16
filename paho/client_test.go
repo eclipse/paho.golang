@@ -663,6 +663,63 @@ func TestCloseDeadlock(t *testing.T) {
 	wg.Wait()
 }
 
+func TestSendOnClosedChannel(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn: ts.ClientConn(),
+	})
+	require.NotNil(t, c)
+
+	if testing.Verbose() {
+		l := log.New(os.Stdout, t.Name(), log.LstdFlags)
+		c.SetDebugLogger(l)
+		c.SetErrorLogger(l)
+	}
+
+	ctx := context.Background()
+	ca, err := c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	go func() {
+		for i := uint16(0); true; i++ {
+			err := ts.SendPacket(&packets.Publish{
+				Payload:  []byte("ciao"),
+				Topic:    "test",
+				PacketID: i,
+				QoS:      1,
+			})
+			if err != nil {
+				t.Logf("Send packet error: %v", err)
+				return
+			}
+		}
+	}()
+
+	time.Sleep(10 * time.Millisecond)
+	c.close()
+}
+
 func isChannelClosed(ch chan struct{}) (closed bool) {
 	defer func() {
 		err, ok := recover().(error)
