@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ChIoT-Tech/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho"
 )
 
 // Handler is the struct providing a request/response functionality for the paho

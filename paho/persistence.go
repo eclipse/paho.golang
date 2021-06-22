@@ -3,7 +3,7 @@ package paho
 import (
 	"sync"
 
-	"github.com/ChIoT-Tech/paho.golang/packets"
+	"github.com/eclipse/paho.golang/packets"
 )
 
 // Persistence is an interface of the functions for a struct

@@ -3,7 +3,7 @@ package topicaliases
 import (
 	"sync"
 
-	"github.com/ChIoT-Tech/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho"
 )
 
 type TAHandler struct {

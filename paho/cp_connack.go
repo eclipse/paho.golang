@@ -1,6 +1,6 @@
 package paho
 
-import "github.com/ChIoT-Tech/paho.golang/packets"
+import "github.com/eclipse/paho.golang/packets"
 
 type (
 	// Connack is a representation of the MQTT Connack packet

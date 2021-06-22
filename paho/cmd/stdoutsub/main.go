@@ -10,7 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ChIoT-Tech/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho"
 )
 
 func main() {
