@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/ChIoT-Tech/paho.golang/packets"
+	"github.com/eclipse/paho.golang/packets"
 )
 
 const (

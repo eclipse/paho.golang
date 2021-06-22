@@ -3,7 +3,7 @@ package topicaliases
 import (
 	"testing"
 
-	"github.com/ChIoT-Tech/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho"
 	"github.com/stretchr/testify/assert"
 )
 

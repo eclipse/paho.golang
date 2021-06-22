@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ChIoT-Tech/paho.golang/packets"
+	"github.com/eclipse/paho.golang/packets"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -426,7 +426,7 @@ func (c *Client) incoming() {
 				}
 				if c.OnServerDisconnect != nil {
 					c.close()
-					c.debug.Println("calling OnServerDisconnect")
+					c.debug.Println("calling OnDisconnect")
 					go c.OnServerDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
 				} else {
 					c.OnClientError(fmt.Errorf("server initiated disconnect"))
