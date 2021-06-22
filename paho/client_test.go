@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.golang/packets"
+  "github.com/ChIoT-Tech/paho.golang/packets"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
