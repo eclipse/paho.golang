@@ -2,15 +2,16 @@
 FROM golang:alpine AS build-env
 ENV CGO_ENABLED 0
 
-ADD ./go.mod /pub_src/go.mod
-ADD ./go.sum /pub_src/go.sum
-ADD ./*.go /pub_src
+ADD . /pub_src
 
-WORKDIR /pub_src
+# Note that the docker-compose sets the context to the root of the paho.golang module. We do this because otherwise
+# the publisher would need to be in its own module and import paho.golang (which makes modifying the example difficult)
+# When using this for other code you do not need to do this! (just import `github.com/eclipse/paho.golang` in your code!)
+WORKDIR /pub_src/autopaho/examples/docker/publisher
 RUN go build -gcflags "all=-N -l" -o /pub
 
 # Final stage
-FROM alpine:latest
+FROM scratch
 
 COPY --from=build-env /pub /
 
