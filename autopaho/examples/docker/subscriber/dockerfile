@@ -1,0 +1,18 @@
+# Compile stage
+FROM golang:alpine AS build-env
+ENV CGO_ENABLED 0
+
+ADD ./go.mod /sub_src/go.mod
+ADD ./go.sum /sub_src/go.sum
+ADD ./*.go /sub_src
+
+WORKDIR /sub_src
+RUN go build -gcflags "all=-N -l" -o /sub
+
+# Final stage
+FROM alpine:latest
+
+COPY --from=build-env /sub /
+
+# Run
+CMD ["/sub"]
