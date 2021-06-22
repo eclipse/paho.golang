@@ -5,7 +5,7 @@ import (
 	"net"
 	"sync"
 
-	"github.com/eclipse/paho.golang/packets"
+	"github.com/ChIoT-Tech/paho.golang/packets"
 )
 
 type fakeAuth struct{}
