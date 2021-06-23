@@ -1,0 +1,78 @@
+version: "3.8"
+services:
+  mosquitto:
+    image: eclipse-mosquitto
+    networks:
+      - test-net
+# ports declaration not needed when running under docker but useful for debugging outside of it!
+    ports:
+      - target: 1883
+        published: 1883
+        protocol: tcp
+        mode: host
+    volumes:
+      - type: bind
+        source: ./binds/mosquitto/config
+        target: /mosquitto/config
+        read_only: true
+      - type: bind
+        source: ./binds/mosquitto/data
+        target: /mosquitto/data
+      - type: bind
+        source: ./binds/mosquitto/log
+        target: /mosquitto/log
+  pub:
+    # We include the whole paho module in the context because otherwise a separate module would be needed (and this would
+    # pull in github.com/eclipse/paho.golang which makes testing difficult.
+    build:
+      context: ../../../
+      dockerfile: autopaho/examples/docker/publisher/dockerfile
+    environment:
+      pubdemo_serverURL: tcp://mosquitto:1883
+      pubdemo_clientID: mqtt_publisher
+      pubdemo_topic: topic1
+      pubdemo_qos: 1
+      pubdemo_keepAlive: 30
+      pubdemo_connectRetryDelay: 10000
+      pubdemo_delayBetweenMessages: 1000
+      pubdemo_printMessages: "true"
+      pubdemo_debug: "true"
+    networks:
+      - test-net
+# Dependency commented out because publisher should run (will not be all that useful) even when mosquitto is down
+# and should connect when mosquitto comes up
+#    depends_on:
+#      - mosquitto
+  sub:
+    # We include the whole paho module in the context because otherwise a separate module would be needed (and this would
+    # pull in github.com/eclipse/paho.golang which makes testing difficult.
+    build:
+      context: ../../../
+      dockerfile: autopaho/examples/docker/subscriber/dockerfile
+    environment:
+      subdemo_serverURL: tcp://mosquitto:1883
+      subdemo_clientID: mqtt_subscriber
+      subdemo_topic: topic1
+      subdemo_qos: 1
+      subdemo_keepAlive: 30
+      subdemo_connectRetryDelay: 10000
+      subdemo_writeToStdout: "true"
+      subdemo_writeToDisk: "false"
+      subdemo_OutputFile: "/binds/receivedMessages.txt"
+      subdemo_debug: "true"
+    networks:
+      - test-net
+# Dependency commented out because subscriber should run (will not be all that useful) even when mosquitto is down
+# and should connect when mosquitto comes up
+#   depends_on:
+#      - mosquitto
+    volumes:
+      - type: bind
+        source: ./binds/sub
+        target: /binds
+        read_only: false
+# Using a custom network is not required but useful for testing (you can take the network down and see what happens)
+# e.g. `docker network disconnect docker_test-net docker_sub_1`
+networks:
+  test-net:
+    external: false
