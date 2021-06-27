@@ -4,9 +4,15 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/eclipse/paho.golang/paho"
 )
@@ -28,6 +34,10 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 				cfg.Conn, err = attemptTCPConnection(connectionCtx, u.Host)
 			case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps":
 				cfg.Conn, err = attemptTLSConnection(connectionCtx, cfg.TlsCfg, u.Host)
+			case "ws":
+				cfg.Conn, err = attemptWebsocketConnection(connectionCtx, nil, cfg.WebSocketCfg, u)
+			case "wss":
+				cfg.Conn, err = attemptWebsocketConnection(connectionCtx, cfg.TlsCfg, cfg.WebSocketCfg, u)
 			default:
 				cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
 				cancelConnCtx()
@@ -81,4 +91,93 @@ func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address strin
 		Config: tlsCfg,
 	}
 	return d.DialContext(ctx, "tcp", address)
+}
+
+// attemptWebsocketConnection - makes a single attempt at establishing a websocket connection with the broker
+func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebSocketConfig, brokerURL *url.URL) (net.Conn, error) {
+	var dialer *websocket.Dialer
+	var requestHeader http.Header
+	if cfg != nil {
+		if cfg.Dialer != nil {
+			dialer = cfg.Dialer(brokerURL, tlsc)
+		}
+		if cfg.Header != nil {
+			requestHeader = cfg.Header(brokerURL, tlsc)
+		}
+	}
+	if dialer == nil {
+		d := *websocket.DefaultDialer // Take a copy as we modify a few values
+		d.TLSClientConfig = tlsc
+		d.Subprotocols = []string{"mqtt"}
+		dialer = &d
+	}
+	ws, _, err := dialer.DialContext(ctx, brokerURL.String(), requestHeader)
+
+	if err != nil {
+		return nil, fmt.Errorf("websocket connection failed: %w", err)
+	}
+
+	wrapper := &websocketConnector{
+		Conn: ws,
+	}
+	return wrapper, err
+}
+
+// websocketConnector is a websocket wrapper so it satisfies the net.Conn interface so it is a
+// drop in replacement of the golang.org/x/net/websocket package.
+// Implementation guide taken from https://github.com/gorilla/websocket/issues/282
+type websocketConnector struct {
+	*websocket.Conn
+	r   io.Reader
+	rio sync.Mutex
+	wio sync.Mutex
+}
+
+// SetDeadline sets both the read and write deadlines
+// Note: deadlines are fatal in websocket connections (so this does not really match net.Conn)
+func (c *websocketConnector) SetDeadline(t time.Time) error {
+	if err := c.SetReadDeadline(t); err != nil {
+		return err
+	}
+	err := c.SetWriteDeadline(t)
+	return err
+}
+
+// Write writes data to the websocket
+func (c *websocketConnector) Write(p []byte) (int, error) {
+	c.wio.Lock()
+	defer c.wio.Unlock()
+
+	err := c.WriteMessage(websocket.BinaryMessage, p)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// Read reads the current websocket frame
+func (c *websocketConnector) Read(p []byte) (int, error) {
+	c.rio.Lock()
+	defer c.rio.Unlock()
+	for {
+		if c.r == nil {
+			// Advance to next message.
+			var err error
+			_, c.r, err = c.NextReader()
+			if err != nil {
+				return 0, err
+			}
+		}
+		n, err := c.r.Read(p)
+		if err == io.EOF {
+			// At end of message.
+			c.r = nil
+			if n > 0 {
+				return n, nil
+			}
+			// No data read, continue to next message.
+			continue
+		}
+		return n, err
+	}
 }
