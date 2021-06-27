@@ -9,6 +9,9 @@ Because the publisher (`pub`), broker (`mosquitto`) and subscriber (`sub`) run i
 simulates a real deployment. One thing to bear in mind is that the network between the containers is very fast and
 reliable (but there are some techniques that can be used to simulate failures etc).
 
+The subscriber connects via websockets whereas the publisher uses a TCP connection (this is set via environmental
+variables).
+
 Note: The docker-compose file sets the context to the root of paho.golang; this is done to avoid the need for 
 publisher and subscriber to be in their own modules. This avoids the need to import `paho.golang` (which would 
 make using this for testing changes to `autopaho` difficult because go would fetch the package from git).

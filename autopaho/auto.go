@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/gorilla/websocket"
+	"net/http"
 	"net/url"
 	"sync"
 	"time"
@@ -25,14 +27,21 @@ import (
 // request is made).
 var ConnectionDownError = errors.New("connection with the MQTT broker is currently down")
 
+// WebSocketConfig enables customisation of the websocket connection
+type WebSocketConfig struct {
+	Dialer func(url *url.URL, tlsCfg *tls.Config) *websocket.Dialer // If non-nil this will be called before each websocket connection (allows full configuration of the dialer used)
+	Header func(url *url.URL, tlsCfg *tls.Config) http.Header       // If non-nil this will be called before each connection attempt to get headers to include with request
+}
+
 // ClientConfig adds a few values, required to manage the connection, to the standard paho.ClientConfig (note that
 // conn will be ignored)
 type ClientConfig struct {
-	BrokerUrls        []*url.URL    // URL(s) for the broker (schemes supported include 'mqtt' and 'tls')
-	TlsCfg            *tls.Config   // Configuration used when connecting using TLS
-	KeepAlive         uint16        // Keepalive period in seconds (the maximum time interval that is permitted to elapse between the point at which the Client finishes transmitting one MQTT Control Packet and the point it starts sending the next)
-	ConnectRetryDelay time.Duration // How long to wait between connection attempts (defaults to 10s)
-	ConnectTimeout    time.Duration // How long to wait for the connection process to complete (defaults to 10s)
+	BrokerUrls        []*url.URL       // URL(s) for the broker (schemes supported include 'mqtt' and 'tls')
+	TlsCfg            *tls.Config      // Configuration used when connecting using TLS
+	KeepAlive         uint16           // Keepalive period in seconds (the maximum time interval that is permitted to elapse between the point at which the Client finishes transmitting one MQTT Control Packet and the point it starts sending the next)
+	ConnectRetryDelay time.Duration    // How long to wait between connection attempts (defaults to 10s)
+	ConnectTimeout    time.Duration    // How long to wait for the connection process to complete (defaults to 10s)
+	WebSocketCfg      *WebSocketConfig // Enables customisation of the websocket connection
 
 	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
 	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
