@@ -721,6 +721,7 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	if err := c.serverInflight.Acquire(pubCtx, 1); err != nil {
 		return nil, err
 	}
+	defer c.serverInflight.Release(1)
 	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
 
 	mid, err := c.MIDs.Request(cpCtx)
@@ -749,7 +750,6 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 		if resp.Type != packets.PUBACK {
 			return nil, fmt.Errorf("received %d instead of PUBACK", resp.Type)
 		}
-		c.serverInflight.Release(1)
 
 		pr := PublishResponseFromPuback(resp.Content.(*packets.Puback))
 		if pr.ReasonCode >= 0x80 {
@@ -760,12 +760,10 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	case 2:
 		switch resp.Type {
 		case packets.PUBCOMP:
-			c.serverInflight.Release(1)
 			pr := PublishResponseFromPubcomp(resp.Content.(*packets.Pubcomp))
 			return pr, nil
 		case packets.PUBREC:
 			c.debug.Printf("received PUBREC for %s (must have errored)", pb.PacketID)
-			c.serverInflight.Release(1)
 			pr := PublishResponseFromPubrec(resp.Content.(*packets.Pubrec))
 			return pr, nil
 		default:
