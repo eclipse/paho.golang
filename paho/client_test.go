@@ -447,6 +447,93 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 	)
 }
 
+func TestManualAcksInOrder(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Connack{
+		ReasonCode:     0,
+		SessionPresent: false,
+		Properties: &packets.Properties{
+			MaximumPacketSize: Uint32(12345),
+			MaximumQOS:        Byte(1),
+			ReceiveMaximum:    Uint16(12345),
+			TopicAliasMaximum: Uint16(200),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	var (
+		wg                   sync.WaitGroup
+		actualPublishPackets []packets.Publish
+		expectedPacketsCount = 3
+	)
+
+	wg.Add(expectedPacketsCount)
+	c := NewClient(ClientConfig{
+		Conn:                       ts.ClientConn(),
+		EnableManualAcknowledgment: true,
+	})
+	c.Router = NewSingleHandlerRouter(func(p *Publish) {
+		defer wg.Done()
+		actualPublishPackets = append(actualPublishPackets, *p.Packet())
+		require.NoError(t, c.Ack(p))
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	t.Cleanup(c.close)
+
+	ctx := context.Background()
+	ca, err := c.Connect(ctx, &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			ReceiveMaximum: Uint16(200),
+		},
+	})
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	var expectedPublishPackets []packets.Publish
+	for i := 1; i <= expectedPacketsCount; i++ {
+		p := packets.Publish{
+			PacketID: uint16(i),
+			Topic:    fmt.Sprintf("test/%d", i),
+			Payload:  []byte(fmt.Sprintf("test payload %d", i)),
+			QoS:      1,
+			Properties: &packets.Properties{
+				User: make([]packets.User, 0),
+			},
+		}
+		expectedPublishPackets = append(expectedPublishPackets, p)
+		require.NoError(t, ts.SendPacket(&p))
+	}
+
+	wg.Wait()
+
+	require.Equal(t, expectedPublishPackets, actualPublishPackets)
+	expectedAcks := []packets.Puback{
+		{PacketID: 1, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 2, ReasonCode: 0, Properties: &packets.Properties{}},
+		{PacketID: 3, ReasonCode: 0, Properties: &packets.Properties{}},
+	}
+	require.Eventually(t,
+		func() bool {
+			return cmp.Equal(expectedAcks, ts.ReceivedPubacks())
+		},
+		time.Second,
+		10*time.Millisecond,
+		cmp.Diff(expectedAcks, ts.ReceivedPubacks()),
+	)
+
+	// Test QoS 0 packets are ignored
+	require.NoError(t, c.Ack(&Publish{QoS: 0, PacketID: 11233}))
+
+	// Test packets not found
+	require.True(t, errors.Is(c.Ack(&Publish{QoS: 1, PacketID: 123}), ErrPacketNotFound))
+	require.True(t, errors.Is(c.Ack(&Publish{QoS: 2, PacketID: 65535}), ErrPacketNotFound))
+}
+
 func TestReceiveServerDisconnect(t *testing.T) {
 	rChan := make(chan struct{})
 	ts := newTestServer()
