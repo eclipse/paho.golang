@@ -50,7 +50,7 @@ func (p *Publish) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeString(p.Topic, &b)
 	if p.QoS > 0 {
-		writeUint16(p.PacketID, &b)
+		_ = writeUint16(p.PacketID, &b)
 	}
 	idvp := p.Properties.Pack(PUBLISH)
 	encodeVBIdirect(len(idvp), &b)
