@@ -144,7 +144,7 @@ func NewClient(conf ClientConfig) *Client {
 	}
 	if c.PingHandler == nil {
 		c.PingHandler = DefaultPingerWithCustomFailHandler(func(e error) {
-			c.error(e)
+			go c.error(e)
 		})
 	}
 	if c.OnClientError == nil {
@@ -407,13 +407,14 @@ func (c *Client) incoming() {
 		default:
 			recv, err := packets.ReadPacket(c.Conn)
 			if err != nil {
-				c.error(err)
+				go c.error(err)
 				return
 			}
 			switch recv.Type {
 			case packets.CONNACK:
 				c.debug.Println("received CONNACK")
-				c.error(fmt.Errorf("received unexpected CONNACK"))
+				go c.error(fmt.Errorf("received unexpected CONNACK"))
+				return
 			case packets.AUTH:
 				c.debug.Println("received AUTH")
 				ap := recv.Content.(*packets.Auth)
@@ -428,7 +429,7 @@ func (c *Client) incoming() {
 				case 0x18:
 					if c.AuthHandler != nil {
 						if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
-							c.error(err)
+							go c.error(err)
 							return
 						}
 					}
@@ -503,13 +504,14 @@ func (c *Client) incoming() {
 				if c.raCtx != nil {
 					c.raCtx.Return <- *recv
 				}
-				if c.OnServerDisconnect != nil {
-					c.close()
-					c.debug.Println("calling OnDisconnect")
-					go c.OnServerDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
-				} else {
-					c.OnClientError(fmt.Errorf("server initiated disconnect"))
-				}
+				go func() {
+					if c.OnServerDisconnect != nil {
+						go c.serverDisconnect(DisconnectFromPacketDisconnect(recv.Content.(*packets.Disconnect)))
+					} else {
+						go c.error(fmt.Errorf("server initiated disconnect"))
+					}
+				}()
+				return
 			case packets.PINGRESP:
 				c.debug.Println("received PINGRESP")
 				c.PingHandler.PingResp()
@@ -548,7 +550,15 @@ func (c *Client) close() {
 func (c *Client) error(e error) {
 	c.debug.Println("error called:", e)
 	c.close()
+	c.workers.Wait()
 	go c.OnClientError(e)
+}
+
+func (c *Client) serverDisconnect(d *Disconnect) {
+	c.close()
+	c.workers.Wait()
+	c.debug.Println("calling OnServerDisconnect")
+	go c.OnServerDisconnect(d)
 }
 
 // Authenticate is used to initiate a reauthentication of credentials with the
