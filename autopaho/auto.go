@@ -5,11 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 
 	"github.com/eclipse/paho.golang/paho"
 )
@@ -49,6 +50,21 @@ type ClientConfig struct {
 	Debug     paho.Logger // By default set to NOOPLogger{},set to a logger for debugging info
 	PahoDebug paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
 
+	connectUsername string
+	connectPassword []byte
+
+	willTopic           string
+	willPayload         []byte
+	willQos             byte
+	willRetain          bool
+	willPayloadFormat   byte
+	willMessageExpiry   uint32
+	willContentType     string
+	willResponseTopic   string
+	willCorrelationData []byte
+
+	connectPacketBuilder func(*paho.Connect) *paho.Connect
+
 	// We include the full paho.ClientConfig in order to simplify moving between the two packages.
 	// Note that that Conn will be ignored.
 	paho.ClientConfig
@@ -63,6 +79,74 @@ type ConnectionManager struct {
 	cancelCtx context.CancelFunc // Calling this will shut things down cleanly
 
 	done chan struct{} // Channel that will be closed when the process has cleanly shutdown
+}
+
+func (cfg *ClientConfig) ResetUsernamePassword() {
+	cfg.connectPassword = []byte{}
+	cfg.connectUsername = ""
+}
+
+func (cfg *ClientConfig) SetUsernamePassword(username string, password []byte) {
+	if len(username) > 0 {
+		cfg.connectUsername = username
+	}
+
+	if len(password) > 0 {
+		cfg.connectPassword = password
+	}
+}
+
+func (cfg *ClientConfig) SetConnectPacketConfigurator(fn func(*paho.Connect) *paho.Connect) bool {
+	cfg.connectPacketBuilder = fn
+	return fn != nil
+}
+
+func (cfg *ClientConfig) buildConnectPacket() *paho.Connect {
+
+	cp := &paho.Connect{
+		KeepAlive:  cfg.KeepAlive,
+		ClientID:   cfg.ClientID,
+		CleanStart: true, // while persistence is not supported we should probably start clean...
+	}
+
+	if len(cfg.connectUsername) > 0 {
+		cp.UsernameFlag = true
+		cp.Username = cfg.connectUsername
+	}
+
+	if len(cfg.connectPassword) > 0 {
+		cp.PasswordFlag = true
+		cp.Password = cfg.connectPassword
+	}
+
+	if len(cfg.willTopic) > 0 && len(cfg.willPayload) > 0 {
+		cp.WillMessage = &paho.WillMessage{
+			Retain:  cfg.willRetain,
+			Payload: cfg.willPayload,
+			Topic:   cfg.willTopic,
+			QoS:     cfg.willQos,
+		}
+
+		// how the broker should wait before considering the client disconnected
+		// hopefully this default is sensible for most applications, tolerating short interruptions
+		willDelayInterval := uint32(2 * cfg.KeepAlive)
+
+		cp.WillProperties = &paho.WillProperties{
+			// Most of these are nil/empty or defaults until related methods are exposed for configuration
+			WillDelayInterval: &willDelayInterval,
+			PayloadFormat:     &cfg.willPayloadFormat,
+			MessageExpiry:     &cfg.willMessageExpiry,
+			ContentType:       cfg.willContentType,
+			ResponseTopic:     cfg.willResponseTopic,
+			CorrelationData:   cfg.willCorrelationData,
+		}
+	}
+
+	if nil != cfg.connectPacketBuilder {
+		cp = cfg.connectPacketBuilder(cp)
+	}
+
+	return cp
 }
 
 // NewConnection creates a connection manager and begins the connection process (will retry until the context is cancelled)
