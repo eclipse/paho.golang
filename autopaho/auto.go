@@ -96,6 +96,13 @@ func (cfg *ClientConfig) SetUsernamePassword(username string, password []byte) {
 	}
 }
 
+func (cfg *ClientConfig) SetWillMessage(topic string, payload []byte, qos byte, retain bool) {
+	cfg.willTopic = topic
+	cfg.willPayload = payload
+	cfg.willQos = qos
+	cfg.willRetain = retain
+}
+
 func (cfg *ClientConfig) SetConnectPacketConfigurator(fn func(*paho.Connect) *paho.Connect) bool {
 	cfg.connectPacketBuilder = fn
 	return fn != nil
