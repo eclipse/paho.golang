@@ -81,11 +81,14 @@ type ConnectionManager struct {
 	done chan struct{} // Channel that will be closed when the process has cleanly shutdown
 }
 
+// ResetUsernamePassword clears any configured username and password on the client configuration
 func (cfg *ClientConfig) ResetUsernamePassword() {
 	cfg.connectPassword = []byte{}
 	cfg.connectUsername = ""
 }
 
+// SetUsernamePassword configures username and password properties for the Connect packets
+// These values are staged in the ClientConfig, and preparation of the Connect packet is deferred.
 func (cfg *ClientConfig) SetUsernamePassword(username string, password []byte) {
 	if len(username) > 0 {
 		cfg.connectUsername = username
@@ -96,6 +99,8 @@ func (cfg *ClientConfig) SetUsernamePassword(username string, password []byte) {
 	}
 }
 
+// SetWillMessage configures the Will topic, payload, QOS and Retain facets of the client connection
+// These values are staged in the ClientConfig, for later preparation of the Connect packet.
 func (cfg *ClientConfig) SetWillMessage(topic string, payload []byte, qos byte, retain bool) {
 	cfg.willTopic = topic
 	cfg.willPayload = payload
@@ -103,11 +108,15 @@ func (cfg *ClientConfig) SetWillMessage(topic string, payload []byte, qos byte, 
 	cfg.willRetain = retain
 }
 
+// SetConnectPacketConfigurator assigns a callback for modification of the Connect packet, called before the connection is opened, allowing the application to adjust its configuration before establishing a connection.
+// This function should be treated as asynchronous, and expected to have no side effects.
 func (cfg *ClientConfig) SetConnectPacketConfigurator(fn func(*paho.Connect) *paho.Connect) bool {
 	cfg.connectPacketBuilder = fn
 	return fn != nil
 }
 
+// buildConnectPacket constructs a Connect packet for the paho client, based on staged configuration.
+// If the program uses SetConnectPacketConfigurator, the provided callback will be executed with the preliminary Connect packet representation.
 func (cfg *ClientConfig) buildConnectPacket() *paho.Connect {
 
 	cp := &paho.Connect{
