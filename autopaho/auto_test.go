@@ -67,7 +67,7 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	}
 
 	if cp.WillMessage.QoS != byte(1) {
-		t.Errorf("Wlll message QOS did not match expected [1]: found [%v]", cp.WillMessage.QoS)
+		t.Errorf("Will message QOS did not match expected [1]: found [%v]", cp.WillMessage.QoS)
 	}
 
 	if cp.WillMessage.Retain != true {
