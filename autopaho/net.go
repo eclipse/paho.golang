@@ -46,11 +46,7 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 
 			if err == nil {
 				cli := paho.NewClient(cfg.ClientConfig)
-				cp := &paho.Connect{
-					KeepAlive:  cfg.KeepAlive,
-					ClientID:   cfg.ClientID,
-					CleanStart: true, // while persistence is not supported we should probably start clean...
-				}
+				cp := cfg.buildConnectPacket()
 				var ca *paho.Connack
 				ca, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
 				if err == nil {                          // Successfully connected
