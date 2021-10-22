@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Puback is the Variable Header definition for a Puback control packet
@@ -25,6 +27,19 @@ const (
 	PubackQuotaExceeded               = 0x97
 	PubackPayloadFormatInvalid        = 0x99
 )
+
+func (p *Puback) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "PUBACK: PacketID:%d ReasonCode:%X", p.PacketID, p.ReasonCode)
+	if p.Properties != nil {
+		fmt.Fprintf(&b, " Properties:\n%s", p.Properties)
+	} else {
+		fmt.Fprint(&b, "\n")
+	}
+
+	return b.String()
+}
 
 //Unpack is the implementation of the interface required function for a packet
 func (p *Puback) Unpack(r *bytes.Buffer) error {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // PropPayloadFormat, etc are the list of property codes for the
@@ -138,6 +139,93 @@ type Properties struct {
 	SharedSubAvailable *byte
 }
 
+func (p *Properties) String() string {
+	var b strings.Builder
+	if p.PayloadFormat != nil {
+		fmt.Fprintf(&b, "\tPayloadFormat:%d\n", *p.PayloadFormat)
+	}
+	if p.MessageExpiry != nil {
+		fmt.Fprintf(&b, "\tMessageExpiry:%d\n", *p.MessageExpiry)
+	}
+	if p.ContentType != "" {
+		fmt.Fprintf(&b, "\tContentType:%s\n", p.ContentType)
+	}
+	if p.ResponseTopic != "" {
+		fmt.Fprintf(&b, "\tResponseTopic:%s\n", p.ResponseTopic)
+	}
+	if len(p.CorrelationData) > 0 {
+		fmt.Fprintf(&b, "\tCorrelationData:%X\n", p.CorrelationData)
+	}
+	if p.SubscriptionIdentifier != nil {
+		fmt.Fprintf(&b, "\tSubscriptionIdentifier:%d\n", *p.SubscriptionIdentifier)
+	}
+	if p.SessionExpiryInterval != nil {
+		fmt.Fprintf(&b, "\tSessionExpiryInterval:%d\n", *p.SessionExpiryInterval)
+	}
+	if p.AssignedClientID != "" {
+		fmt.Fprintf(&b, "\tAssignedClientID:%s\n", p.AssignedClientID)
+	}
+	if p.ServerKeepAlive != nil {
+		fmt.Fprintf(&b, "\tServerKeepAlive:%d\n", *p.ServerKeepAlive)
+	}
+	if p.AuthMethod != "" {
+		fmt.Fprintf(&b, "\tAuthMethod:%s\n", p.AuthMethod)
+	}
+	if len(p.AuthData) > 0 {
+		fmt.Fprintf(&b, "\tAuthData:%X\n", p.AuthData)
+	}
+	if p.RequestProblemInfo != nil {
+		fmt.Fprintf(&b, "\tRequestProblemInfo:%d\n", *p.RequestProblemInfo)
+	}
+	if p.WillDelayInterval != nil {
+		fmt.Fprintf(&b, "\tWillDelayInterval:%d\n", *p.WillDelayInterval)
+	}
+	if p.RequestResponseInfo != nil {
+		fmt.Fprintf(&b, "\tRequestResponseInfo:%d\n", *p.RequestResponseInfo)
+	}
+	if p.ServerReference != "" {
+		fmt.Fprintf(&b, "\tServerReference:%s\n", p.ServerReference)
+	}
+	if p.ReasonString != "" {
+		fmt.Fprintf(&b, "\tReasonString:%s\n", p.ReasonString)
+	}
+	if p.ReceiveMaximum != nil {
+		fmt.Fprintf(&b, "\tReceiveMaximum:%d\n", *p.ReceiveMaximum)
+	}
+	if p.TopicAliasMaximum != nil {
+		fmt.Fprintf(&b, "\tTopicAliasMaximum:%d\n", *p.TopicAliasMaximum)
+	}
+	if p.TopicAlias != nil {
+		fmt.Fprintf(&b, "\tTopicAlias:%d\n", *p.TopicAlias)
+	}
+	if p.MaximumQOS != nil {
+		fmt.Fprintf(&b, "\tMaximumQOS:%d\n", *p.MaximumQOS)
+	}
+	if p.RetainAvailable != nil {
+		fmt.Fprintf(&b, "\tRetainAvailable:%d\n", *p.RetainAvailable)
+	}
+	if p.MaximumPacketSize != nil {
+		fmt.Fprintf(&b, "\tMaximumPacketSize:%d\n", *p.MaximumPacketSize)
+	}
+	if p.WildcardSubAvailable != nil {
+		fmt.Fprintf(&b, "\tWildcardSubAvailable:%d\n", *p.WildcardSubAvailable)
+	}
+	if p.SubIDAvailable != nil {
+		fmt.Fprintf(&b, "\tSubIDAvailable:%d\n", *p.SubIDAvailable)
+	}
+	if p.SharedSubAvailable != nil {
+		fmt.Fprintf(&b, "\tSharedSubAvailable:%d\n", *p.SharedSubAvailable)
+	}
+	if len(p.User) > 0 {
+		fmt.Fprint(&b, "\tUser Properties:\n")
+		for _, v := range p.User {
+			fmt.Fprintf(&b, "\t\t%s:%s\n", v.Key, v.Value)
+		}
+	}
+
+	return b.String()
+}
+
 // Pack takes all the defined properties for an Properties and produces
 // a slice of bytes representing the wire format for the information
 func (i *Properties) Pack(p byte) []byte {
@@ -168,7 +256,7 @@ func (i *Properties) Pack(p byte) []byte {
 			writeString(i.ResponseTopic, &b)
 		}
 
-		if i.CorrelationData != nil && len(i.CorrelationData) > 0 {
+		if len(i.CorrelationData) > 0 {
 			b.WriteByte(PropCorrelationData)
 			writeBinary(i.CorrelationData, &b)
 		}

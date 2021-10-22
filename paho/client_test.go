@@ -606,6 +606,72 @@ func TestAuthenticate(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 }
 
+type TestAuth struct {
+	auther func(*Auth) *Auth
+}
+
+func (t *TestAuth) Authenticate(a *Auth) *Auth {
+	return t.auther(a)
+}
+
+func (t *TestAuth) Authenticated() {
+
+}
+
+func TestAuthenticateOnConnect(t *testing.T) {
+	auther := TestAuth{
+		auther: func(a *Auth) *Auth {
+			return &Auth{
+				ReasonCode: packets.AuthContinueAuthentication,
+				Properties: &AuthProperties{
+					AuthMethod: "testauth",
+					AuthData:   []byte("client-final-data"),
+				},
+			}
+		},
+	}
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Auth{
+		ReasonCode: packets.AuthContinueAuthentication,
+		Properties: &packets.Properties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("server first data"),
+		},
+	})
+	ts.SetResponse(packets.AUTH, &packets.Connack{
+		ReasonCode: packets.ConnackSuccess,
+		Properties: &packets.Properties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("server final data"),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn:        ts.ClientConn(),
+		AuthHandler: &auther,
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATEONCONNECT: ", log.LstdFlags))
+
+	cp := &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("client first data"),
+		},
+	}
+
+	ca, err := c.Connect(context.Background(), cp)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	time.Sleep(10 * time.Millisecond)
+}
+
 func TestCleanup(t *testing.T) {
 	ts := newTestServer()
 	go ts.Run()
