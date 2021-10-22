@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Subscribe is the Variable Header definition for a Subscribe control packet
@@ -11,6 +13,18 @@ type Subscribe struct {
 	Properties    *Properties
 	Subscriptions map[string]SubOptions
 	PacketID      uint16
+}
+
+func (s *Subscribe) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "SUBSCRIBE: PacketID:%d Subscriptions:\n", s.PacketID)
+	for sub, o := range s.Subscriptions {
+		fmt.Fprintf(&b, "\t%s: QOS:%d RetainHandling:%X NoLocal:%t RetainAsPublished:%t\n", sub, o.QoS, o.RetainHandling, o.NoLocal, o.RetainAsPublished)
+	}
+	fmt.Fprintf(&b, "Properties:\n%s", s.Properties)
+
+	return b.String()
 }
 
 // SubOptions is the struct representing the options for a subscription

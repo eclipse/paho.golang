@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Pubcomp is the Variable Header definition for a Pubcomp control packet
@@ -18,6 +20,19 @@ const (
 	PubcompSuccess                  = 0x00
 	PubcompPacketIdentifierNotFound = 0x92
 )
+
+func (p *Pubcomp) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "PUBCOMP: ReasonCode:%X PacketID:%d", p.ReasonCode, p.PacketID)
+	if p.Properties != nil {
+		fmt.Fprintf(&b, " Properties:\n%s", p.Properties)
+	} else {
+		fmt.Fprint(&b, "\n")
+	}
+
+	return b.String()
+}
 
 //Unpack is the implementation of the interface required function for a packet
 func (p *Pubcomp) Unpack(r *bytes.Buffer) error {

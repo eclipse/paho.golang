@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -11,6 +12,10 @@ type Suback struct {
 	Properties *Properties
 	Reasons    []byte
 	PacketID   uint16
+}
+
+func (s *Suback) String() string {
+	return fmt.Sprintf("SUBACK: ReasonCode:%v PacketID:%d Properties:\n%s", s.Reasons, s.PacketID, s.Properties)
 }
 
 // SubackGrantedQoS0, etc are the list of valid suback reason codes.

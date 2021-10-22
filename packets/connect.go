@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Connect is the Variable Header definition for a connect control packet
@@ -24,6 +26,30 @@ type Connect struct {
 	WillRetain      bool
 	WillFlag        bool
 	CleanStart      bool
+}
+
+func (c *Connect) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "CONNECT: ProtocolName:%s ProtocolVersion:%d ClientID:%s KeepAlive:%d CleanStart:%t", c.ProtocolName, c.ProtocolVersion, c.ClientID, c.KeepAlive, c.CleanStart)
+	if c.UsernameFlag {
+		fmt.Fprintf(&b, " Username:%s", c.Username)
+	}
+	if c.PasswordFlag {
+		fmt.Fprintf(&b, " Password:%s", c.Password)
+	}
+	fmt.Fprint(&b, "\n")
+	if c.WillFlag {
+		fmt.Fprintf(&b, " WillTopic:%s WillQOS:%d WillRetain:%t WillMessage:\n%s\n", c.WillTopic, c.WillQOS, c.WillRetain, c.WillMessage)
+		if c.WillProperties != nil {
+			fmt.Fprintf(&b, "WillProperties:\n%s", c.WillProperties)
+		}
+	}
+	if c.Properties != nil {
+		fmt.Fprintf(&b, "Properties:\n%s", c.Properties)
+	}
+
+	return b.String()
 }
 
 // PackFlags takes the Connect flags and packs them into the single byte

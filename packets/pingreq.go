@@ -2,12 +2,17 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
 
 // Pingreq is the Variable Header definition for a Pingreq control packet
 type Pingreq struct {
+}
+
+func (p *Pingreq) String() string {
+	return fmt.Sprintf("PINGREQ")
 }
 
 //Unpack is the implementation of the interface required function for a packet

@@ -606,6 +606,92 @@ func TestAuthenticate(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 }
 
+type TestAuth struct {
+	auther        func(*Auth) *Auth
+	authenticated func()
+}
+
+func (t *TestAuth) Authenticate(a *Auth) *Auth {
+	return t.auther(a)
+}
+
+func (t *TestAuth) Authenticated() {
+	t.authenticated()
+}
+
+func waitTimeout(wg *sync.WaitGroup, t time.Duration) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false
+	case <-time.After(t):
+		return true
+	}
+}
+
+func TestAuthenticateOnConnect(t *testing.T) {
+	var wg sync.WaitGroup
+	auther := TestAuth{
+		auther: func(a *Auth) *Auth {
+			return &Auth{
+				ReasonCode: packets.AuthContinueAuthentication,
+				Properties: &AuthProperties{
+					AuthMethod: "testauth",
+					AuthData:   []byte("client-final-data"),
+				},
+			}
+		},
+		authenticated: func() {
+			wg.Done()
+		},
+	}
+	ts := newTestServer()
+	ts.SetResponse(packets.CONNACK, &packets.Auth{
+		ReasonCode: packets.AuthContinueAuthentication,
+		Properties: &packets.Properties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("server first data"),
+		},
+	})
+	ts.SetResponse(packets.AUTH, &packets.Connack{
+		ReasonCode: packets.ConnackSuccess,
+		Properties: &packets.Properties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("server final data"),
+		},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
+	c := NewClient(ClientConfig{
+		Conn:        ts.ClientConn(),
+		AuthHandler: &auther,
+	})
+	require.NotNil(t, c)
+	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATEONCONNECT: ", log.LstdFlags))
+
+	cp := &Connect{
+		KeepAlive:  30,
+		ClientID:   "testClient",
+		CleanStart: true,
+		Properties: &ConnectProperties{
+			AuthMethod: "testauth",
+			AuthData:   []byte("client first data"),
+		},
+	}
+	wg.Add(1)
+
+	ca, err := c.Connect(context.Background(), cp)
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), ca.ReasonCode)
+
+	assert.False(t, waitTimeout(&wg, 1*time.Second))
+}
+
 func TestCleanup(t *testing.T) {
 	ts := newTestServer()
 	go ts.Run()

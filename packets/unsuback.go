@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -11,6 +12,10 @@ type Unsuback struct {
 	Reasons    []byte
 	Properties *Properties
 	PacketID   uint16
+}
+
+func (u *Unsuback) String() string {
+	return fmt.Sprintf("UNSUBACK: ReasonCode:%v PacketID:%d Properties:\n%s", u.Reasons, u.PacketID, u.Properties)
 }
 
 // UnsubackSuccess, etc are the list of valid unsuback reason codes.
