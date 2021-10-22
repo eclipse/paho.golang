@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -11,6 +12,35 @@ type Connack struct {
 	Properties     *Properties
 	ReasonCode     byte
 	SessionPresent bool
+}
+
+const (
+	ConnackSuccess                     = 0x00
+	ConnackUnspecifiedError            = 0x80
+	ConnackMalformedPacket             = 0x81
+	ConnackProtocolError               = 0x81
+	ConnackImplementationSpecificError = 0x83
+	ConnackUnsupportedProtocolVersion  = 0x84
+	ConnackInvalidClientID             = 0x85
+	ConnackBadUsernameOrPassword       = 0x86
+	ConnackNotAuthorized               = 0x87
+	ConnackServerUnavailable           = 0x88
+	ConnackServerBusy                  = 0x89
+	ConnackBanned                      = 0x8A
+	ConnackBadAuthenticationMethod     = 0x8C
+	ConnackTopicNameInvalid            = 0x90
+	ConnackPacketTooLarge              = 0x95
+	ConnackQuotaExceeded               = 0x97
+	ConnackPayloadFormatInvalid        = 0x99
+	ConnackRetainNotSupported          = 0x9A
+	ConnackQoSNotSupported             = 0x9B
+	ConnackUseAnotherServer            = 0x9C
+	ConnackServerMoved                 = 0x9D
+	ConnackConnectionRateExceeded      = 0x9F
+)
+
+func (c *Connack) String() string {
+	return fmt.Sprintf("CONNACK: ReasonCode:%d SessionPresent:%t\nProperties:\n%s", c.ReasonCode, c.SessionPresent, c.Properties)
 }
 
 //Unpack is the implementation of the interface required function for a packet

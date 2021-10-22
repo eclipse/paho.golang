@@ -75,14 +75,14 @@ func (t *testServer) Run() {
 			log.Println("test server received a control packet:", recv.Type)
 			switch recv.Type {
 			case packets.CONNECT:
-				log.Println("received connect", recv.Content.(*packets.Connect))
+				log.Println("received", recv.Content.(*packets.Connect))
 				if p, ok := t.responses[packets.CONNACK]; ok {
 					if _, err := p.WriteTo(t.conn); err != nil {
 						log.Println(err)
 					}
 				}
 			case packets.SUBSCRIBE:
-				log.Println("received subscribe", recv.Content.(*packets.Subscribe))
+				log.Println("received", recv.Content.(*packets.Subscribe))
 				if p, ok := t.responses[packets.SUBACK]; ok {
 					p.(*packets.Suback).PacketID = recv.PacketID()
 					if _, err := p.WriteTo(t.conn); err != nil {
@@ -90,7 +90,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.UNSUBSCRIBE:
-				log.Println("received unsubscribe", recv.Content.(*packets.Unsubscribe))
+				log.Println("received", recv.Content.(*packets.Unsubscribe))
 				if p, ok := t.responses[packets.UNSUBACK]; ok {
 					p.(*packets.Unsuback).PacketID = recv.PacketID()
 					if _, err := p.WriteTo(t.conn); err != nil {
@@ -98,7 +98,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.AUTH:
-				log.Println("received auth", recv.Content.(*packets.Auth))
+				log.Println("received", recv.Content.(*packets.Auth))
 				if p, ok := t.responses[packets.AUTH]; ok {
 					log.Println("sending auth")
 					if _, err := p.WriteTo(t.conn); err != nil {
@@ -106,7 +106,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.PUBLISH:
-				log.Println("received publish", recv.Content.(*packets.Publish))
+				log.Println("received", recv.Content.(*packets.Publish))
 				switch recv.Content.(*packets.Publish).QoS {
 				case 1:
 					if p, ok := t.responses[packets.PUBACK]; ok {
@@ -127,18 +127,18 @@ func (t *testServer) Run() {
 				}
 
 			case packets.PUBACK:
-				log.Println("received puback", recv.Content.(*packets.Puback))
+				log.Println("received", recv.Content.(*packets.Puback))
 				t.receivedMu.Lock()
 				t.receivedPubacks = append(t.receivedPubacks, recv.Content.(*packets.Puback))
 				t.receivedMu.Unlock()
 			case packets.PUBCOMP:
-				log.Println("received pubcomp", recv.Content.(*packets.Pubcomp))
+				log.Println("received", recv.Content.(*packets.Pubcomp))
 			case packets.SUBACK:
-				log.Println("received suback")
+				log.Println("received")
 			case packets.UNSUBACK:
-				log.Println("received unsuback")
+				log.Println("received")
 			case packets.PUBREC:
-				log.Println("received pubrec", recv.Content.(*packets.Pubrec))
+				log.Println("received", recv.Content.(*packets.Pubrec))
 				if p, ok := t.responses[packets.PUBREL]; ok {
 					p.(*packets.Pubrel).PacketID = recv.PacketID()
 					if _, err := p.WriteTo(t.conn); err != nil {
@@ -149,7 +149,7 @@ func (t *testServer) Run() {
 				t.receivedPubrecs = append(t.receivedPubrecs, recv.Content.(*packets.Pubrec))
 				t.receivedMu.Unlock()
 			case packets.PUBREL:
-				log.Println("received pubrel", recv.Content.(*packets.Pubrel))
+				log.Println("received", recv.Content.(*packets.Pubrel))
 				if p, ok := t.responses[packets.PUBCOMP]; ok {
 					p.(*packets.Pubcomp).PacketID = recv.PacketID()
 					if _, err := p.WriteTo(t.conn); err != nil {
@@ -157,7 +157,7 @@ func (t *testServer) Run() {
 					}
 				}
 			case packets.DISCONNECT:
-				log.Println("received disconnect")
+				log.Println("received")
 			case packets.PINGREQ:
 				log.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
