@@ -607,7 +607,8 @@ func TestAuthenticate(t *testing.T) {
 }
 
 type TestAuth struct {
-	auther func(*Auth) *Auth
+	auther        func(*Auth) *Auth
+	authenticated func()
 }
 
 func (t *TestAuth) Authenticate(a *Auth) *Auth {
@@ -615,10 +616,25 @@ func (t *TestAuth) Authenticate(a *Auth) *Auth {
 }
 
 func (t *TestAuth) Authenticated() {
+	t.authenticated()
+}
 
+func waitTimeout(wg *sync.WaitGroup, t time.Duration) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false
+	case <-time.After(t):
+		return true
+	}
 }
 
 func TestAuthenticateOnConnect(t *testing.T) {
+	var wg sync.WaitGroup
 	auther := TestAuth{
 		auther: func(a *Auth) *Auth {
 			return &Auth{
@@ -628,6 +644,9 @@ func TestAuthenticateOnConnect(t *testing.T) {
 					AuthData:   []byte("client-final-data"),
 				},
 			}
+		},
+		authenticated: func() {
+			wg.Done()
 		},
 	}
 	ts := newTestServer()
@@ -664,12 +683,13 @@ func TestAuthenticateOnConnect(t *testing.T) {
 			AuthData:   []byte("client first data"),
 		},
 	}
+	wg.Add(1)
 
 	ca, err := c.Connect(context.Background(), cp)
 	require.Nil(t, err)
 	assert.Equal(t, uint8(0), ca.ReasonCode)
 
-	time.Sleep(10 * time.Millisecond)
+	assert.False(t, waitTimeout(&wg, 1*time.Second))
 }
 
 func TestCleanup(t *testing.T) {
