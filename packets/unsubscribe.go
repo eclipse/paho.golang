@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -11,6 +12,10 @@ type Unsubscribe struct {
 	Topics     []string
 	Properties *Properties
 	PacketID   uint16
+}
+
+func (u *Unsubscribe) String() string {
+	return fmt.Sprintf("UNSUBSCRIBE: PacketID:%d Topics:%v Properties:\n%s", u.PacketID, u.Topics, u.Properties)
 }
 
 // Unpack is the implementation of the interface required function for a packet

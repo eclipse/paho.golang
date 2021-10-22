@@ -2,12 +2,17 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
 
 // Pingresp is the Variable Header definition for a Pingresp control packet
 type Pingresp struct {
+}
+
+func (p *Pingresp) String() string {
+	return fmt.Sprintf("PINGRESP")
 }
 
 //Unpack is the implementation of the interface required function for a packet

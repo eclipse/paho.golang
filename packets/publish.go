@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -16,6 +17,10 @@ type Publish struct {
 	QoS        byte
 	Duplicate  bool
 	Retain     bool
+}
+
+func (p *Publish) String() string {
+	return fmt.Sprintf("PUBLISH: PacketID:%d QOS:%d Topic:%s Duplicate:%t Retain:%t Payload:\n%s\nProperties\n%s", p.PacketID, p.QoS, p.Topic, p.Duplicate, p.Retain, string(p.Payload), p.Properties)
 }
 
 //Unpack is the implementation of the interface required function for a packet

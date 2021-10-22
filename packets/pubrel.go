@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Pubrel is the Variable Header definition for a Pubrel control packet
@@ -11,6 +13,19 @@ type Pubrel struct {
 	Properties *Properties
 	PacketID   uint16
 	ReasonCode byte
+}
+
+func (p *Pubrel) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "PUBREL: ReasonCode:%X PacketID:%d", p.ReasonCode, p.PacketID)
+	if p.Properties != nil {
+		fmt.Fprintf(&b, " Properties:\n%s", p.Properties)
+	} else {
+		fmt.Fprint(&b, "\n")
+	}
+
+	return b.String()
 }
 
 //Unpack is the implementation of the interface required function for a packet

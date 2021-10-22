@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Pubrec is the Variable Header definition for a Pubrec control packet
@@ -25,6 +27,19 @@ const (
 	PubrecQuotaExceeded               = 0x97
 	PubrecPayloadFormatInvalid        = 0x99
 )
+
+func (p *Pubrec) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "PUBREC: ReasonCode:%X PacketID:%d", p.ReasonCode, p.PacketID)
+	if p.Properties != nil {
+		fmt.Fprintf(&b, " Properties:\n%s", p.Properties)
+	} else {
+		fmt.Fprint(&b, "\n")
+	}
+
+	return b.String()
+}
 
 //Unpack is the implementation of the interface required function for a packet
 func (p *Pubrec) Unpack(r *bytes.Buffer) error {

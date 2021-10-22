@@ -2,8 +2,10 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
+	"strings"
 )
 
 // Auth is the Variable Header definition for a Auth control packet
@@ -18,6 +20,19 @@ const (
 	AuthContinueAuthentication = 0x18
 	AuthReauthenticate         = 0x19
 )
+
+func (a *Auth) String() string {
+	var b strings.Builder
+
+	fmt.Fprintf(&b, "AUTH: ReasonCode:%X", a.ReasonCode)
+	if a.Properties != nil {
+		fmt.Fprintf(&b, " Properties:\n%s", a.Properties)
+	} else {
+		fmt.Fprint(&b, "\n")
+	}
+
+	return b.String()
+}
 
 // Unpack is the implementation of the interface required function for a packet
 func (a *Auth) Unpack(r *bytes.Buffer) error {

@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"net"
 )
@@ -10,6 +11,10 @@ import (
 type Disconnect struct {
 	Properties *Properties
 	ReasonCode byte
+}
+
+func (d *Disconnect) String() string {
+	return fmt.Sprintf("DISCONNECT: ReasonCode:%X Properties\n%s", d.ReasonCode, d.Properties)
 }
 
 // DisconnectNormalDisconnection, etc are the list of valid disconnection reason codes.
