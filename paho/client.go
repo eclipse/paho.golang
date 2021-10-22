@@ -867,6 +867,10 @@ func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error
 	switch r := recv.Content.(type) {
 	case *packets.Connack:
 		c.debug.Println("received CONNACK")
+		if r.ReasonCode == packets.ConnackSuccess && r.Properties != nil && r.Properties.AuthMethod != "" {
+			// Successful connack and AuthMethod is defined, must have successfully authed during connect
+			go c.AuthHandler.Authenticated()
+		}
 		packet <- r
 	case *packets.Auth:
 		c.debug.Println("received AUTH")
