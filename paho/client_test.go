@@ -106,7 +106,7 @@ func TestClientSubscribe(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	s := &Subscribe{
 		Subscriptions: map[string]SubscribeOptions{
@@ -141,7 +141,7 @@ func TestClientUnsubscribe(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	u := &Unsubscribe{
 		Topics: []string{
@@ -173,7 +173,7 @@ func TestClientPublishQoS0(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	p := &Publish{
 		Topic:   "test/0",
@@ -207,7 +207,7 @@ func TestClientPublishQoS1(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	p := &Publish{
 		Topic:   "test/1",
@@ -246,7 +246,7 @@ func TestClientPublishQoS2(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	p := &Publish{
 		Topic:   "test/2",
@@ -284,7 +284,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -320,7 +320,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -356,7 +356,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -556,7 +556,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	err := ts.SendPacket(&packets.Disconnect{
 		ReasonCode: packets.DisconnectServerShuttingDown,
@@ -589,7 +589,7 @@ func TestAuthenticate(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	go c.PingHandler.Start(c, 30*time.Second)
 
 	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cf()

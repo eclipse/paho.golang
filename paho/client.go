@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"strings"
@@ -62,6 +63,11 @@ type (
 		// it determines how often the client tries to send a batch of acknowledgments in the right order to the server.
 		SendAcksInterval time.Duration
 	}
+	// Packets WriterTo
+	whatWriteTo struct {
+		w io.WriterTo
+		e error
+	}
 	// Client is the struct representing an MQTT client
 	Client struct {
 		mu sync.Mutex
@@ -78,6 +84,7 @@ type (
 		clientInflight *semaphore.Weighted
 		debug          Logger
 		errors         Logger
+		outPackets     chan *whatWriteTo
 	}
 
 	// CommsProperties is a struct of the communication properties that may
@@ -128,6 +135,7 @@ func NewClient(conf ClientConfig) *Client {
 		ClientConfig: conf,
 		errors:       NOOPLogger{},
 		debug:        NOOPLogger{},
+		outPackets:   make(chan *whatWriteTo),
 	}
 
 	if c.Persistence == nil {
@@ -150,6 +158,7 @@ func NewClient(conf ClientConfig) *Client {
 	if c.OnClientError == nil {
 		c.OnClientError = func(e error) {}
 	}
+	go c.waitWrite()
 
 	return c
 }
@@ -208,7 +217,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	ccp.ProtocolVersion = 5
 
 	c.debug.Println("sending CONNECT")
-	if _, err := ccp.WriteTo(c.Conn); err != nil {
+	if err := c.doWrite(ccp); err != nil {
 		cleanup()
 		return nil, err
 	}
@@ -282,7 +291,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	go func() {
 		defer c.workers.Done()
 		defer c.debug.Println("returning from ping handler worker")
-		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
+		c.PingHandler.Start(c, time.Duration(keepalive)*time.Second)
 	}()
 
 	c.debug.Println("starting publish packets loop")
@@ -333,6 +342,24 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	return ca, nil
 }
 
+func (c *Client) waitWrite() {
+	for {
+		wwt, ok := <-c.outPackets
+		if !ok {
+			return
+		}
+		_, wwt.e = wwt.w.WriteTo(c.Conn)
+	}
+}
+
+func (c *Client) doWrite(sp io.WriterTo) error {
+	wt := &whatWriteTo{
+		w: sp,
+	}
+	c.outPackets <- wt
+	return wt.e
+}
+
 func (c *Client) Ack(pb *Publish) error {
 	if !c.EnableManualAcknowledgment {
 		return ErrManualAcknowledgmentDisabled
@@ -351,8 +378,7 @@ func (c *Client) ack(pb *packets.Publish) {
 			PacketID:   pb.PacketID,
 		}
 		c.debug.Println("sending PUBACK")
-		_, err := pa.WriteTo(c.Conn)
-		if err != nil {
+		if err := c.doWrite(&pa); err != nil {
 			c.errors.Printf("failed to send PUBACK for %d: %s", pb.PacketID, err)
 		}
 	case 2:
@@ -361,8 +387,7 @@ func (c *Client) ack(pb *packets.Publish) {
 			PacketID:   pb.PacketID,
 		}
 		c.debug.Printf("sending PUBREC")
-		_, err := pr.WriteTo(c.Conn)
-		if err != nil {
+		if err := c.doWrite(&pr); err != nil {
 			c.errors.Printf("failed to send PUBREC for %d: %s", pb.PacketID, err)
 		}
 	}
@@ -428,7 +453,8 @@ func (c *Client) incoming() {
 					}
 				case 0x18:
 					if c.AuthHandler != nil {
-						if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
+						// if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
+						if err := c.doWrite(c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet()); err != nil {
 							go c.error(err)
 							return
 						}
@@ -462,8 +488,8 @@ func (c *Client) incoming() {
 						ReasonCode: 0x92,
 					}
 					c.debug.Println("sending PUBREL for", pl.PacketID)
-					_, err := pl.WriteTo(c.Conn)
-					if err != nil {
+					//_, err := pl.WriteTo(c.Conn)
+					if err := c.doWrite(&pl); err != nil {
 						c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
 					}
 				} else {
@@ -476,8 +502,8 @@ func (c *Client) incoming() {
 							PacketID: pr.PacketID,
 						}
 						c.debug.Println("sending PUBREL for", pl.PacketID)
-						_, err := pl.WriteTo(c.Conn)
-						if err != nil {
+						//_, err := pl.WriteTo(c.Conn)
+						if err := c.doWrite(&pl); err != nil {
 							c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
 						}
 					}
@@ -494,9 +520,9 @@ func (c *Client) incoming() {
 						PacketID: pr.PacketID,
 					}
 					c.debug.Println("sending PUBCOMP for", pr.PacketID)
-					_, err := pc.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBCOMP for %d: %s", pc.PacketID, err)
+					//_, err := pc.WriteTo(c.Conn)
+					if err := c.doWrite(&pc); err != nil {
+						c.errors.Printf("failed to send PUBCOMP for %d: %v", pc.PacketID, err)
 					}
 				}
 			case packets.DISCONNECT:
@@ -583,7 +609,8 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	}()
 
 	c.debug.Println("sending AUTH")
-	if _, err := a.Packet().WriteTo(c.Conn); err != nil {
+	// if _, err := a.Packet().WriteTo(c.Conn); err != nil {
+	if err := c.doWrite(a.Packet()); err != nil {
 		return nil, err
 	}
 
@@ -649,7 +676,8 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	sp.PacketID = mid
 
 	c.debug.Println("sending SUBSCRIBE")
-	if _, err := sp.WriteTo(c.Conn); err != nil {
+	// if _, err := sp.WriteTo(c.Conn); err != nil {
+	if err := c.doWrite(sp); err != nil {
 		return nil, err
 	}
 	c.debug.Println("waiting for SUBACK")
@@ -712,7 +740,8 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 	up.PacketID = mid
 
 	c.debug.Println("sending UNSUBSCRIBE")
-	if _, err := up.WriteTo(c.Conn); err != nil {
+	// if _, err := up.WriteTo(c.Conn); err != nil {
+	if err := c.doWrite(up); err != nil {
 		return nil, err
 	}
 	c.debug.Println("waiting for UNSUBACK")
@@ -786,7 +815,8 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 	switch p.QoS {
 	case 0:
 		c.debug.Println("sending QoS0 message")
-		if _, err := pb.WriteTo(c.Conn); err != nil {
+		// if _, err := pb.WriteTo(c.Conn); err != nil {
+		if err := c.doWrite(pb); err != nil {
 			return nil, err
 		}
 		return nil, nil
@@ -813,8 +843,8 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 	}
 	defer c.MIDs.Free(mid)
 	pb.PacketID = mid
-
-	if _, err := pb.WriteTo(c.Conn); err != nil {
+	// if _, err := pb.WriteTo(c.Conn); err != nil {
+	if err := c.doWrite(pb); err != nil {
 		return nil, err
 	}
 	var resp packets.ControlPacket
@@ -879,8 +909,8 @@ func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error
 			return
 		}
 		c.debug.Println("sending AUTH")
-		_, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(r)).Packet().WriteTo(c.Conn)
-		if err != nil {
+		//_, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(r)).Packet().WriteTo(c.Conn)
+		if err := c.doWrite(c.AuthHandler.Authenticate(AuthFromPacketAuth(r)).Packet()); err != nil {
 			errs <- fmt.Errorf("error sending authentication packet: %w", err)
 			return
 		}
@@ -898,7 +928,8 @@ func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error
 // is closed.
 func (c *Client) Disconnect(d *Disconnect) error {
 	c.debug.Println("disconnecting")
-	_, err := d.Packet().WriteTo(c.Conn)
+	//_, err := d.Packet().WriteTo(c.Conn)
+	err := c.doWrite(d.Packet())
 
 	c.close()
 	c.workers.Wait()

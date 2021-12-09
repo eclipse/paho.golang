@@ -2,7 +2,6 @@ package paho
 
 import (
 	"fmt"
-	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -28,7 +27,7 @@ type PingFailHandler func(error)
 // SetDebug() is used to pass in a Logger to be used to log debug
 // information, for example sharing a logger with the main client
 type Pinger interface {
-	Start(net.Conn, time.Duration)
+	Start(*Client, time.Duration)
 	Stop()
 	PingResp()
 	SetDebug(Logger)
@@ -38,7 +37,7 @@ type Pinger interface {
 type PingHandler struct {
 	mu              sync.Mutex
 	lastPing        time.Time
-	conn            net.Conn
+	ownClient       *Client
 	stop            chan struct{}
 	pingFailHandler PingFailHandler
 	pingOutstanding int32
@@ -58,9 +57,9 @@ func DefaultPingerWithCustomFailHandler(pfh PingFailHandler) *PingHandler {
 
 // Start is the library provided Pinger's implementation of
 // the required interface function()
-func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
+func (p *PingHandler) Start(c *Client, pt time.Duration) {
 	p.mu.Lock()
-	p.conn = c
+	p.ownClient = c
 	p.stop = make(chan struct{})
 	p.mu.Unlock()
 	checkTicker := time.NewTicker(pt / 4)
@@ -76,8 +75,9 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 				return
 			}
 			if time.Since(p.lastPing) >= pt {
-				//time to send a ping
-				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
+				// time to send a ping
+				// if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
+				if err := p.ownClient.doWrite(packets.NewControlPacket(packets.PINGREQ)); err != nil {
 					if p.pingFailHandler != nil {
 						p.pingFailHandler(err)
 					}
