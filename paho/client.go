@@ -33,7 +33,11 @@ type (
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PingHandler, PacketTimeout and Router.
 	ClientConfig struct {
-		ClientID      string
+		ClientID string
+		// Conn is the connection to broker.
+		// BEWARE that most wrapped net.Conn implementations like tls.Conn are
+		// not thread safe for writing. To fix, use packets.NewThreadSafeConn
+		// wrapper or extend the custom net.Conn struct with sync.Locker.
 		Conn          net.Conn
 		MIDs          MIDService
 		AuthHandler   Auther
