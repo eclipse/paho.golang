@@ -65,8 +65,8 @@ type (
 	}
 	// Packets WriterTo
 	whatWriteTo struct {
-		w io.WriterTo
-		e error
+		w  io.WriterTo
+		oe chan error
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -348,16 +348,18 @@ func (c *Client) waitWrite() {
 		if !ok {
 			return
 		}
-		_, wwt.e = wwt.w.WriteTo(c.Conn)
+		_, err := wwt.w.WriteTo(c.Conn)
+		wwt.oe <- err
 	}
 }
 
 func (c *Client) doWrite(sp io.WriterTo) error {
 	wt := &whatWriteTo{
-		w: sp,
+		w:  sp,
+		oe: make(chan error),
 	}
 	c.outPackets <- wt
-	return wt.e
+	return <-wt.oe
 }
 
 func (c *Client) Ack(pb *Publish) error {
