@@ -14,6 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
 )
 
@@ -86,7 +87,8 @@ func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address strin
 	d := tls.Dialer{
 		Config: tlsCfg,
 	}
-	return d.DialContext(ctx, "tcp", address)
+	conn, err := d.DialContext(ctx, "tcp", address)
+	return packets.NewThreadSafeConn(conn), err
 }
 
 // attemptWebsocketConnection - makes a single attempt at establishing a websocket connection with the broker
@@ -114,7 +116,8 @@ func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebS
 	}
 
 	wrapper := &websocketConnector{
-		Conn: ws,
+		Conn:   ws,
+		Locker: &sync.Mutex{},
 	}
 	return wrapper, err
 }
@@ -126,7 +129,9 @@ type websocketConnector struct {
 	*websocket.Conn
 	r   io.Reader
 	rio sync.Mutex
-	wio sync.Mutex
+
+	// Used by packets.ControlPacket.WriteTo to ensure thread-safe writes
+	sync.Locker
 }
 
 // SetDeadline sets both the read and write deadlines
@@ -141,9 +146,6 @@ func (c *websocketConnector) SetDeadline(t time.Time) error {
 
 // Write writes data to the websocket
 func (c *websocketConnector) Write(p []byte) (int, error) {
-	c.wio.Lock()
-	defer c.wio.Unlock()
-
 	err := c.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
 		return 0, err

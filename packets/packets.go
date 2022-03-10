@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 )
 
 // PacketType is a type alias to byte representing the different
@@ -53,6 +54,20 @@ type (
 		FixedHeader
 	}
 )
+
+// NewThreadSafeConn wraps net.Conn with a mutex. ControlPacket uses it in
+// WriteTo method to ensure parallel writes are thread-Safe.
+func NewThreadSafeConn(c net.Conn) net.Conn {
+	type threadSafeConn struct {
+		net.Conn
+		sync.Locker
+	}
+
+	return &threadSafeConn{
+		Conn:   c,
+		Locker: &sync.Mutex{},
+	}
+}
 
 // WriteTo operates on a FixedHeader and takes the option values and produces
 // the wire format byte that represents these.
@@ -275,6 +290,10 @@ func (c *ControlPacket) WriteTo(w io.Writer) (int64, error) {
 
 	buffers = append(net.Buffers{header.Bytes()}, buffers...)
 
+	if safe, ok := w.(sync.Locker); ok {
+		safe.Lock()
+		defer safe.Unlock()
+	}
 	return buffers.WriteTo(w)
 }
 

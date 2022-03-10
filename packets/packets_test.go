@@ -3,7 +3,10 @@ package packets
 import (
 	"bufio"
 	"bytes"
+	"io"
+	"net"
 	"reflect"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -420,5 +423,60 @@ func BenchmarkPublish_Buffers(b *testing.B) {
 
 	for n := 0; n < b.N; n++ {
 		pp.Buffers()
+	}
+}
+
+func BenchmarkWriteTo(b *testing.B) {
+	r, w := io.Pipe()
+	done := make(chan int, 1)
+
+	go func(r io.Reader, done chan int) {
+		for {
+			_, err := ReadPacket(r)
+			if err != nil {
+				b.Error(err)
+			}
+
+			select {
+			case <-done:
+				return
+			default:
+			}
+		}
+	}(r, done)
+
+	// Wrap Writer with Locker to ensure WriteTo will be thread-safe.
+	type wrap struct {
+		io.Writer
+		sync.Locker
+	}
+	safeWriter := wrap{
+		Writer: w,
+		Locker: &sync.Mutex{},
+	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			x := NewControlPacket(PUBLISH)
+			x.Content.(*Publish).QoS = 0
+			x.Content.(*Publish).Topic = "testTopic"
+			x.Content.(*Publish).PacketID = uint16(100)
+			x.Content.(*Publish).Payload = []byte("testPayload")
+			pp := x.Content.(*Publish)
+			for n := 0; n < b.N; n++ {
+				pp.WriteTo(safeWriter)
+			}
+		}
+	})
+
+	done <- 1
+}
+
+func TestNewThreadSafeWrapper(t *testing.T) {
+	var conn net.Conn
+	ts := NewThreadSafeConn(conn)
+
+	if _, ok := ts.(sync.Locker); !ok {
+		t.Error("NewThreadSafeConn does not implement sync.Locker")
 	}
 }
