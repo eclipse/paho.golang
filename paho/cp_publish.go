@@ -93,29 +93,31 @@ func (p *Publish) String() string {
 	var b bytes.Buffer
 
 	fmt.Fprintf(&b, "topic: %s  qos: %d  retain: %t\n", p.Topic, p.QoS, p.Retain)
-	if p.Properties.PayloadFormat != nil {
-		fmt.Fprintf(&b, "PayloadFormat: %v\n", p.Properties.PayloadFormat)
-	}
-	if p.Properties.MessageExpiry != nil {
-		fmt.Fprintf(&b, "MessageExpiry: %v\n", p.Properties.MessageExpiry)
-	}
-	if p.Properties.ContentType != "" {
-		fmt.Fprintf(&b, "ContentType: %v\n", p.Properties.ContentType)
-	}
-	if p.Properties.ResponseTopic != "" {
-		fmt.Fprintf(&b, "ResponseTopic: %v\n", p.Properties.ResponseTopic)
-	}
-	if p.Properties.CorrelationData != nil {
-		fmt.Fprintf(&b, "CorrelationData: %v\n", p.Properties.CorrelationData)
-	}
-	if p.Properties.TopicAlias != nil {
-		fmt.Fprintf(&b, "TopicAlias: %d\n", p.Properties.TopicAlias)
-	}
-	if p.Properties.SubscriptionIdentifier != nil {
-		fmt.Fprintf(&b, "SubscriptionIdentifier: %v\n", p.Properties.SubscriptionIdentifier)
-	}
-	for _, v := range p.Properties.User {
-		fmt.Fprintf(&b, "User: %s : %s\n", v.Key, v.Value)
+	if p.Properties != nil {
+		if p.Properties.PayloadFormat != nil {
+			fmt.Fprintf(&b, "PayloadFormat: %v\n", p.Properties.PayloadFormat)
+		}
+		if p.Properties.MessageExpiry != nil {
+			fmt.Fprintf(&b, "MessageExpiry: %v\n", p.Properties.MessageExpiry)
+		}
+		if p.Properties.ContentType != "" {
+			fmt.Fprintf(&b, "ContentType: %v\n", p.Properties.ContentType)
+		}
+		if p.Properties.ResponseTopic != "" {
+			fmt.Fprintf(&b, "ResponseTopic: %v\n", p.Properties.ResponseTopic)
+		}
+		if p.Properties.CorrelationData != nil {
+			fmt.Fprintf(&b, "CorrelationData: %v\n", p.Properties.CorrelationData)
+		}
+		if p.Properties.TopicAlias != nil {
+			fmt.Fprintf(&b, "TopicAlias: %d\n", p.Properties.TopicAlias)
+		}
+		if p.Properties.SubscriptionIdentifier != nil {
+			fmt.Fprintf(&b, "SubscriptionIdentifier: %v\n", p.Properties.SubscriptionIdentifier)
+		}
+		for _, v := range p.Properties.User {
+			fmt.Fprintf(&b, "User: %s : %s\n", v.Key, v.Value)
+		}
 	}
 	b.WriteString(string(p.Payload))
 
