@@ -2,6 +2,7 @@ package packets
 
 import (
 	"bytes"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net"
@@ -288,6 +289,32 @@ func (c *ControlPacket) WriteTo(w io.Writer) (int64, error) {
 		return 0, err
 	}
 
+	// TLS connection doesn't implement net.buffersWriter interface
+	// so cant use 'writeBuffers' API on tls.Conn.
+	// Following condition will not return OK inside buffers.WriteTo function
+	//   if wv, ok := w.(buffersWriter); ok {
+	//	 	return wv.writeBuffers(v)
+	//   })
+	// so end up writing messages by iterating over net.Buffers
+	//  for _, b := range *v {
+	//  	nb, err := w.Write(b)
+	//  	n += int64(nb)
+	//  	if err != nil {
+	//  		v.consume(n)
+	//  		return n, err
+	//  	}
+	//  }
+	// which end up writing partial data(Header,Properties,Paylod) in each iteration
+	// which will interleave the packet writes from other go routines.
+	if _, ok := w.(*tls.Conn); ok {
+		tlsData := []byte{}
+		tlsData = append(tlsData, header.Bytes()...)
+		for _, v := range buffers {
+			tlsData = append(tlsData, v...)
+		}
+		n, err := w.Write(tlsData)
+		return int64(n), err
+	}
 	buffers = append(net.Buffers{header.Bytes()}, buffers...)
 
 	if safe, ok := w.(sync.Locker); ok {
