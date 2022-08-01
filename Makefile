@@ -24,7 +24,7 @@ build_rpc:
 	go build -o ./bin/rpc ./paho/cmd/rpc
 
 build_rpc_cm:
-	go build -o ./bin/rpc_cm ./paho/cmd/rpc_cm
+	go build -o ./bin/rpc_auto ./autopaho/cmd/rpc
 
 build_pub:
 	go build -o ./bin/stdinpub ./paho/cmd/stdinpub
