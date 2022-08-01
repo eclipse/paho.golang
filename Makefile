@@ -16,3 +16,20 @@ cover_browser:
 	go tool cover -html=/tmp/autopaho_coverage.out
 	go tool cover -html=/tmp/packets_coverage.out
 	go tool cover -html=/tmp/paho_coverage.out
+
+build_chat:
+	go build ./paho/cmd/chat
+
+build_rpc:
+	go build ./paho/cmd/rpc
+
+build_rpc_cm:
+	go build ./paho/cmd/rpc_cm
+
+build_pub:
+	go build ./paho/cmd/stdinpub
+
+build_sub:
+	go build ./paho/cmd/stdoutsub
+
+build: build_chat build_rpc build_pub build_sub build_rpc_cm

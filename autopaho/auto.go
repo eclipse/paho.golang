@@ -208,7 +208,12 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 				break mainLoop // Only occurs when context is cancelled
 			}
 			c.mu.Lock()
+			r := cli.Router
+			if c.cli != nil && c.cli.Router != nil {
+				r = c.cli.Router
+			}
 			c.cli = cli
+			c.cli.Router = r
 			c.mu.Unlock()
 			close(c.connUp)
 
@@ -325,4 +330,27 @@ func (c *ConnectionManager) Publish(ctx context.Context, p *paho.Publish) (*paho
 		return nil, ConnectionDownError
 	}
 	return cli.Publish(ctx, p)
+}
+
+func (c *ConnectionManager) UseRouter(fn func(paho.Router) error) error {
+	c.mu.Lock()
+	cli := c.cli
+	c.mu.Unlock()
+
+	if cli == nil {
+		return ConnectionDownError
+	}
+
+	return fn(cli.Router)
+}
+
+func (c *ConnectionManager) GetClientID() string {
+	c.mu.Lock()
+	cli := c.cli
+	c.mu.Unlock()
+
+	if cli == nil {
+		return ""
+	}
+	return cli.ClientID
 }

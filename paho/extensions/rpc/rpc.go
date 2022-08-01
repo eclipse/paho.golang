@@ -13,21 +13,24 @@ import (
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
-	c          *paho.Client
+	c          paho.PubSubClient
 	correlData map[string]chan *paho.Publish
 }
 
-func NewHandler(c *paho.Client) (*Handler, error) {
+func NewHandler(c paho.PubSubClient) (*Handler, error) {
 	h := &Handler{
 		c:          c,
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	c.UseRouter(func(r paho.Router) error {
+		r.RegisterHandler(fmt.Sprintf("%s/responses", c.GetClientID()), h.responseHandler)
+		return nil
+	})
 
 	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
+			fmt.Sprintf("%s/responses", c.GetClientID()): {QoS: 1},
 		},
 	})
 	if err != nil {
@@ -65,7 +68,7 @@ func (h *Handler) Request(pb *paho.Publish) (*paho.Publish, error) {
 	}
 
 	pb.Properties.CorrelationData = []byte(cID)
-	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
+	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.GetClientID())
 	pb.Retain = false
 
 	_, err := h.c.Publish(context.Background(), pb)

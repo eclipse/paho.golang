@@ -27,6 +27,22 @@ var (
 	ErrManualAcknowledgmentDisabled = errors.New("manual acknowledgments disabled")
 )
 
+type Publisher interface {
+	Publish(context.Context, *Publish) (*PublishResponse, error)
+}
+
+type Subscriber interface {
+	Subscribe(context.Context, *Subscribe) (*Suback, error)
+	Unsubscribe(context.Context, *Unsubscribe) (*Unsuback, error)
+}
+
+type PubSubClient interface {
+	Publisher
+	Subscriber
+	UseRouter(func(r Router) error) error
+	GetClientID() string
+}
+
 type (
 	// ClientConfig are the user configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options
@@ -920,4 +936,14 @@ func (c *Client) SetDebugLogger(l Logger) {
 // and sets it to be used by the error log endpoint
 func (c *Client) SetErrorLogger(l Logger) {
 	c.errors = l
+}
+
+// UseRouter returns the client's Router
+func (c *Client) UseRouter(fn func(r Router) error) error {
+	return fn(c.Router)
+}
+
+// GetClientID returns the client's ID
+func (c *Client) GetClientID() string {
+	return c.ClientID
 }
