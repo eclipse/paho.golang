@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/eclipse/paho.golang/autopaho"
+	"github.com/eclipse/paho.golang/paho"
 )
 
 // Retrieve config from environmental variables
@@ -97,6 +102,41 @@ func getConfig() (config, error) {
 	}
 
 	return cfg, nil
+}
+
+func getCmConfig(cfg config) autopaho.ClientConfig {
+	return autopaho.ClientConfig{
+		BrokerUrls:        []*url.URL{cfg.serverURL},
+		KeepAlive:         cfg.keepAlive,
+		ConnectRetryDelay: cfg.connectRetryDelay,
+		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+			fmt.Println("mqtt connection up")
+			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+				Subscriptions: map[string]paho.SubscribeOptions{
+					cfg.topic: {QoS: cfg.qos},
+				},
+			}); err != nil {
+				fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received.", err)
+				return
+			}
+			fmt.Println("mqtt subscription made")
+		},
+		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
+		ClientConfig: paho.ClientConfig{
+			ClientID: cfg.clientID,
+			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+				log.Printf("%v+", m)
+			}),
+			OnClientError: func(err error) { fmt.Printf("%s requested disconnect: %s\n", cfg.clientID, err) },
+			OnServerDisconnect: func(d *paho.Disconnect) {
+				if d.Properties != nil {
+					fmt.Printf("%s requested disconnect: %s\n", cfg.clientID, d.Properties.ReasonString)
+				} else {
+					fmt.Printf("%s requested disconnect; reason code: %d\n", cfg.clientID, d.ReasonCode)
+				}
+			},
+		},
+	}
 }
 
 // stringFromEnv - Retrieves a string from the environment and ensures it is not blank (ort non-existent)
