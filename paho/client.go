@@ -938,7 +938,7 @@ func (c *Client) SetErrorLogger(l Logger) {
 	c.errors = l
 }
 
-// UseRouter returns the client's Router
+// UseRouter executes a function that is passed the client's Router
 func (c *Client) UseRouter(fn func(r Router) error) error {
 	return fn(c.Router)
 }

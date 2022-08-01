@@ -332,6 +332,9 @@ func (c *ConnectionManager) Publish(ctx context.Context, p *paho.Publish) (*paho
 	return cli.Publish(ctx, p)
 }
 
+// UseRouter executes a function that is passed the client's Router
+// We pass a function to UseRouter instead of returning a reference to cli.Router to ensure we lock and unlock
+// the mutex protecting it's access
 func (c *ConnectionManager) UseRouter(fn func(paho.Router) error) error {
 	c.mu.Lock()
 	cli := c.cli
@@ -344,6 +347,7 @@ func (c *ConnectionManager) UseRouter(fn func(paho.Router) error) error {
 	return fn(cli.Router)
 }
 
+// GetClientID returns the client's ID in a memory safe manner
 func (c *ConnectionManager) GetClientID() string {
 	c.mu.Lock()
 	cli := c.cli
