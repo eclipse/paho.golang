@@ -274,11 +274,10 @@ func (c *ConnectionManager) Done() <-chan struct{} {
 // callback.
 func (c *ConnectionManager) AwaitConnection(ctx context.Context) error {
 	c.mu.Lock()
-	ch := c.connUp
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
 	select {
-	case <-ch:
+	case <-c.connUp:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
@@ -293,13 +292,12 @@ func (c *ConnectionManager) AwaitConnection(ctx context.Context) error {
 // is returned from the function, along with any errors.
 func (c *ConnectionManager) Subscribe(ctx context.Context, s *paho.Subscribe) (*paho.Suback, error) {
 	c.mu.Lock()
-	cli := c.cli
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	if cli == nil {
+	if c.cli == nil {
 		return nil, ConnectionDownError
 	}
-	return cli.Subscribe(ctx, s)
+	return c.cli.Subscribe(ctx, s)
 }
 
 // Unsubscribe is used to send an Unsubscribe request to the MQTT server.
@@ -308,13 +306,12 @@ func (c *ConnectionManager) Subscribe(ctx context.Context, s *paho.Subscribe) (*
 // is returned from the function, along with any errors.
 func (c *ConnectionManager) Unsubscribe(ctx context.Context, u *paho.Unsubscribe) (*paho.Unsuback, error) {
 	c.mu.Lock()
-	cli := c.cli
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	if cli == nil {
+	if c.cli == nil {
 		return nil, ConnectionDownError
 	}
-	return cli.Unsubscribe(ctx, u)
+	return c.cli.Unsubscribe(ctx, u)
 }
 
 // Publish is used to send a publication to the MQTT server.
@@ -323,13 +320,12 @@ func (c *ConnectionManager) Unsubscribe(ctx context.Context, u *paho.Unsubscribe
 // Any response message is returned from the function, along with any errors.
 func (c *ConnectionManager) Publish(ctx context.Context, p *paho.Publish) (*paho.PublishResponse, error) {
 	c.mu.Lock()
-	cli := c.cli
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	if cli == nil {
+	if c.cli == nil {
 		return nil, ConnectionDownError
 	}
-	return cli.Publish(ctx, p)
+	return c.cli.Publish(ctx, p)
 }
 
 // UseRouter executes a function that is passed the client's Router
@@ -337,24 +333,22 @@ func (c *ConnectionManager) Publish(ctx context.Context, p *paho.Publish) (*paho
 // the mutex protecting it's access
 func (c *ConnectionManager) UseRouter(fn func(paho.Router) error) error {
 	c.mu.Lock()
-	cli := c.cli
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	if cli == nil {
+	if c.cli == nil {
 		return ConnectionDownError
 	}
 
-	return fn(cli.Router)
+	return fn(c.cli.Router)
 }
 
 // GetClientID returns the client's ID in a memory safe manner
 func (c *ConnectionManager) GetClientID() string {
 	c.mu.Lock()
-	cli := c.cli
-	c.mu.Unlock()
+	defer c.mu.Unlock()
 
-	if cli == nil {
+	if c.cli == nil {
 		return ""
 	}
-	return cli.ClientID
+	return c.cli.ClientID
 }
