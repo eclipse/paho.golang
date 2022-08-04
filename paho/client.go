@@ -27,22 +27,6 @@ var (
 	ErrManualAcknowledgmentDisabled = errors.New("manual acknowledgments disabled")
 )
 
-type Publisher interface {
-	Publish(context.Context, *Publish) (*PublishResponse, error)
-}
-
-type Subscriber interface {
-	Subscribe(context.Context, *Subscribe) (*Suback, error)
-	Unsubscribe(context.Context, *Unsubscribe) (*Unsuback, error)
-}
-
-type PubSubClient interface {
-	Publisher
-	Subscriber
-	UseRouter(func(r Router) error) error
-	GetClientID() string
-}
-
 type (
 	// ClientConfig are the user configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options

@@ -9,15 +9,31 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
+type Publisher interface {
+	Publish(context.Context, *paho.Publish) (*paho.PublishResponse, error)
+}
+
+type Subscriber interface {
+	Subscribe(context.Context, *paho.Subscribe) (*paho.Suback, error)
+	Unsubscribe(context.Context, *paho.Unsubscribe) (*paho.Unsuback, error)
+}
+
+type PubSubClient interface {
+	Publisher
+	Subscriber
+	UseRouter(func(r paho.Router) error) error
+	GetClientID() string
+}
+
 // Handler is the struct providing a request/response functionality for the paho
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
-	c          paho.PubSubClient
+	c          PubSubClient
 	correlData map[string]chan *paho.Publish
 }
 
-func NewHandler(c paho.PubSubClient) (*Handler, error) {
+func NewHandler(c PubSubClient) (*Handler, error) {
 	h := &Handler{
 		c:          c,
 		correlData: make(map[string]chan *paho.Publish),
