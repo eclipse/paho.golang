@@ -21,7 +21,7 @@ type Subscriber interface {
 type PubSubClient interface {
 	Publisher
 	Subscriber
-	UseRouter(func(r paho.Router) error) error
+	UseClient(func(c *paho.Client) error) error
 	GetClientID() string
 }
 
@@ -33,20 +33,22 @@ type Handler struct {
 	correlData map[string]chan *paho.Publish
 }
 
-func NewHandler(c PubSubClient) (*Handler, error) {
+func NewHandler(cm PubSubClient) (*Handler, error) {
 	h := &Handler{
-		c:          c,
+		c:          cm,
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	c.UseRouter(func(r paho.Router) error {
-		r.RegisterHandler(fmt.Sprintf("%s/responses", c.GetClientID()), h.responseHandler)
+	cm.UseClient(func(c *paho.Client) error {
+		c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
 		return nil
 	})
 
-	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
+	clientID := cm.GetClientID()
+
+	_, err := cm.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.GetClientID()): {QoS: 1},
+			fmt.Sprintf("%s/responses", clientID): {QoS: 1},
 		},
 	})
 	if err != nil {

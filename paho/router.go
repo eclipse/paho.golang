@@ -139,7 +139,7 @@ func routeSplit(route string) []string {
 	}
 	var result []string
 	if strings.HasPrefix(route, "$share") {
-		result = strings.Split(route, "/")[1:]
+		result = strings.Split(route, "/")[2:]
 	} else {
 		result = strings.Split(route, "/")
 	}

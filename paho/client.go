@@ -922,9 +922,9 @@ func (c *Client) SetErrorLogger(l Logger) {
 	c.errors = l
 }
 
-// UseRouter executes a function that is passed the client's Router
-func (c *Client) UseRouter(fn func(r Router) error) error {
-	return fn(c.Router)
+// UseClient executes a function passing it a reference to itself
+func (c *Client) UseClient(fn func(r *Client) error) error {
+	return fn(c)
 }
 
 // GetClientID returns the client's ID

@@ -59,8 +59,8 @@ func listener(rTopic string) {
 
 		time.Sleep(5 * time.Second)
 
-		cm.UseRouter(func(r paho.Router) error {
-			r.RegisterHandler(rTopic, func(m *paho.Publish) {
+		cm.UseClient(func(c *paho.Client) error {
+			c.Router.RegisterHandler(rTopic, func(m *paho.Publish) {
 				if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
 					log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
 
