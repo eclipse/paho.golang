@@ -39,14 +39,17 @@ func NewHandler(cm PubSubClient) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	cm.UseClient(func(c *paho.Client) error {
-		c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	var clientID string
+	err := cm.UseClient(func(c *paho.Client) error {
+		clientID = c.ClientID
+		c.Router.RegisterHandler(fmt.Sprintf("%s/responses", clientID), h.responseHandler)
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
 
-	clientID := cm.GetClientID()
-
-	_, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+	_, err = cm.Subscribe(context.Background(), &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
 			fmt.Sprintf("%s/responses", clientID): {QoS: 1},
 		},
