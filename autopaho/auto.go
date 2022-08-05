@@ -300,7 +300,7 @@ func (c *ConnectionManager) Subscribe(ctx context.Context, s *paho.Subscribe) (*
 	if cli == nil {
 		return nil, ConnectionDownError
 	}
-	return c.cli.Subscribe(ctx, s)
+	return cli.Subscribe(ctx, s)
 }
 
 // Unsubscribe is used to send an Unsubscribe request to the MQTT server.
