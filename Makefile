@@ -32,4 +32,5 @@ build_pub:
 build_sub:
 	go build -o ./bin/stdoutsub ./paho/cmd/stdoutsub
 
+.PHONY: build
 build: build_chat build_rpc build_pub build_sub build_rpc_cm
