@@ -17,7 +17,7 @@ type Handler struct {
 	correlData map[string]chan *paho.Publish
 }
 
-func NewHandler(c *paho.Client) (*Handler, error) {
+func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
 	h := &Handler{
 		c:          c,
 		correlData: make(map[string]chan *paho.Publish),
@@ -25,7 +25,7 @@ func NewHandler(c *paho.Client) (*Handler, error) {
 
 	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
 
-	_, err := c.Subscribe(context.Background(), &paho.Subscribe{
+	_, err := c.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
 			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
 		},
@@ -54,7 +54,7 @@ func (h *Handler) getCorrelIDChan(cID string) chan *paho.Publish {
 	return rChan
 }
 
-func (h *Handler) Request(pb *paho.Publish) (*paho.Publish, error) {
+func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish, error) {
 	cID := fmt.Sprintf("%d", time.Now().UnixNano())
 	rChan := make(chan *paho.Publish)
 
@@ -68,7 +68,7 @@ func (h *Handler) Request(pb *paho.Publish) (*paho.Publish, error) {
 	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
 	pb.Retain = false
 
-	_, err := h.c.Publish(context.Background(), pb)
+	_, err := h.c.Publish(ctx, pb)
 	if err != nil {
 		return nil, err
 	}

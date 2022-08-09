@@ -147,6 +147,9 @@ func main() {
 		log.Fatalf("Failed to connect to %s: %s", *server, err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	c := paho.NewClient(paho.ClientConfig{
 		Router: paho.NewSingleHandlerRouter(nil),
 		Conn:   conn,
@@ -176,12 +179,12 @@ func main() {
 
 	fmt.Printf("Connected to %s\n", *server)
 
-	h, err := rpc.NewHandler(c)
+	h, err := rpc.NewHandler(ctx, c)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	resp, err := h.Request(&paho.Publish{
+	resp, err := h.Request(ctx, &paho.Publish{
 		Topic:   *rTopic,
 		Payload: []byte(`{"function":"mul", "param1": 10, "param2": 5}`),
 	})
