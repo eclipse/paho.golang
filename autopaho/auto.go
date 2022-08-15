@@ -326,13 +326,3 @@ func (c *ConnectionManager) Publish(ctx context.Context, p *paho.Publish) (*paho
 	}
 	return cli.Publish(ctx, p)
 }
-
-func (c *ConnectionManager) UseClient(fn func(*paho.Client) error) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.cli == nil {
-		return ConnectionDownError
-	}
-	return fn(c.cli)
-}
