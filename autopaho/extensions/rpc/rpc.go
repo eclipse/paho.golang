@@ -19,26 +19,26 @@ type Handler struct {
 	responseTopic string
 }
 
-func NewHandler(ctx context.Context, cm *autopaho.ConnectionManager, responseTopic string) (*Handler, error) {
+type HandlerOpts struct {
+	Conn          *autopaho.ConnectionManager
+	Router        paho.Router
+	ResponseTopic string
+	ClientID      string
+}
+
+func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
 	h := &Handler{
-		cm:         cm,
+		cm:         opts.Conn,
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	var clientId string
-	if err := cm.UseClient(func(c *paho.Client) error {
-		clientId = c.ClientID
-		c.Router.RegisterHandler(fmt.Sprintf("%s/responses", clientId), h.responseHandler)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
+	opts.Router.RegisterHandler(fmt.Sprintf("%s/responses", opts.ClientID), h.responseHandler)
 
-	h.responseTopic = fmt.Sprint(responseTopic, clientId)
+	h.responseTopic = fmt.Sprint(opts.ResponseTopic, opts.ClientID)
 
-	_, err := cm.Subscribe(ctx, &paho.Subscribe{
+	_, err := opts.Conn.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", clientId): {QoS: 1},
+			fmt.Sprintf("%s/responses", opts.ClientID): {QoS: 1},
 		},
 	})
 	if err != nil {

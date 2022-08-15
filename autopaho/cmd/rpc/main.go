@@ -59,43 +59,40 @@ func listener(rTopic string) {
 
 		time.Sleep(5 * time.Second)
 
-		cm.UseClient(func(c *paho.Client) error {
-			c.Router.RegisterHandler(rTopic, func(m *paho.Publish) {
-				if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
-					log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
+		cliCfg.Router.RegisterHandler(rTopic, func(m *paho.Publish) {
+			if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
+				log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
 
-					var r Request
-					var resp Response
+				var r Request
+				var resp Response
 
-					if err := json.NewDecoder(bytes.NewReader(m.Payload)).Decode(&r); err != nil {
-						log.Printf("Failed to decode Request: %v", err)
-					}
-
-					switch r.Function {
-					case "add":
-						resp.Value = r.Param1 + r.Param2
-					case "mul":
-						resp.Value = r.Param1 * r.Param2
-					case "div":
-						resp.Value = r.Param1 / r.Param2
-					case "sub":
-						resp.Value = r.Param1 - r.Param2
-					}
-
-					body, _ := json.Marshal(resp)
-					_, err := cm.Publish(ctx, &paho.Publish{
-						Properties: &paho.PublishProperties{
-							CorrelationData: m.Properties.CorrelationData,
-						},
-						Topic:   m.Properties.ResponseTopic,
-						Payload: body,
-					})
-					if err != nil {
-						log.Fatalf("failed to publish message: %s", err)
-					}
+				if err := json.NewDecoder(bytes.NewReader(m.Payload)).Decode(&r); err != nil {
+					log.Printf("Failed to decode Request: %v", err)
 				}
-			})
-			return nil
+
+				switch r.Function {
+				case "add":
+					resp.Value = r.Param1 + r.Param2
+				case "mul":
+					resp.Value = r.Param1 * r.Param2
+				case "div":
+					resp.Value = r.Param1 / r.Param2
+				case "sub":
+					resp.Value = r.Param1 - r.Param2
+				}
+
+				body, _ := json.Marshal(resp)
+				_, err := cm.Publish(ctx, &paho.Publish{
+					Properties: &paho.PublishProperties{
+						CorrelationData: m.Properties.CorrelationData,
+					},
+					Topic:   m.Properties.ResponseTopic,
+					Payload: body,
+				})
+				if err != nil {
+					log.Fatalf("failed to publish message: %s", err)
+				}
+			}
 		})
 
 		_, err = cm.Subscribe(ctx, &paho.Subscribe{
@@ -139,7 +136,13 @@ func main() {
 
 	time.Sleep(5 * time.Second)
 
-	h, err := rpc.NewHandler(ctx, cm, "%s/responses")
+	h, err := rpc.NewHandler(ctx, rpc.HandlerOpts{
+		Conn:          cm,
+		Router:        cliCfg.Router,
+		ResponseTopic: "%s/responses",
+		ClientID:      cliCfg.ClientID,
+	})
+
 	if err != nil {
 		log.Fatal(err)
 	}

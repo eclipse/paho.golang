@@ -207,8 +207,13 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			if cli == nil {
 				break mainLoop // Only occurs when context is cancelled
 			}
+			r := c.cli.Router // Get a reference to the previous client's Router
 			c.mu.Lock()
 			c.cli = cli
+			if r != nil {
+				// Assign the previous client's router to the new c.cli to persist the registered handlers through reconnects
+				c.cli.Router = r
+			}
 			c.mu.Unlock()
 			close(c.connUp)
 
