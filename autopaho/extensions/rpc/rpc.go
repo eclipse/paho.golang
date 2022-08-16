@@ -32,13 +32,13 @@ func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	opts.Router.RegisterHandler(fmt.Sprintf("%s/responses", opts.ClientID), h.responseHandler)
+	h.responseTopic = fmt.Sprintf(opts.ResponseTopic, opts.ClientID)
 
-	h.responseTopic = fmt.Sprint(opts.ResponseTopic, opts.ClientID)
+	opts.Router.RegisterHandler(h.responseTopic, h.responseHandler)
 
 	_, err := opts.Conn.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", opts.ClientID): {QoS: 1},
+			h.responseTopic: {QoS: 1},
 		},
 	})
 	if err != nil {
