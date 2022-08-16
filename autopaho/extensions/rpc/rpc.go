@@ -20,10 +20,10 @@ type Handler struct {
 }
 
 type HandlerOpts struct {
-	Conn          *autopaho.ConnectionManager
-	Router        paho.Router
-	ResponseTopic string
-	ClientID      string
+	Conn             *autopaho.ConnectionManager
+	Router           paho.Router
+	ResponseTopicFmt string
+	ClientID         string
 }
 
 func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
@@ -32,7 +32,7 @@ func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	h.responseTopic = fmt.Sprintf(opts.ResponseTopic, opts.ClientID)
+	h.responseTopic = fmt.Sprintf(opts.ResponseTopicFmt, opts.ClientID)
 
 	opts.Router.RegisterHandler(h.responseTopic, h.responseHandler)
 

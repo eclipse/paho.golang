@@ -137,10 +137,10 @@ func main() {
 	time.Sleep(5 * time.Second)
 
 	h, err := rpc.NewHandler(ctx, rpc.HandlerOpts{
-		Conn:          cm,
-		Router:        cliCfg.Router,
-		ResponseTopic: "%s/responses",
-		ClientID:      cliCfg.ClientID,
+		Conn:             cm,
+		Router:           cliCfg.Router,
+		ResponseTopicFmt: "%s/responses",
+		ClientID:         cliCfg.ClientID,
 	})
 
 	if err != nil {
