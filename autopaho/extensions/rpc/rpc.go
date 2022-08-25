@@ -65,7 +65,7 @@ func (h *Handler) getCorrelIDChan(cID string) chan *paho.Publish {
 	return rChan
 }
 
-func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish, error) {
+func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Publish, err error) {
 	cID := fmt.Sprintf("%d", time.Now().UnixNano())
 	rChan := make(chan *paho.Publish)
 
@@ -79,13 +79,17 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish,
 	pb.Properties.ResponseTopic = h.responseTopic
 	pb.Retain = false
 
-	_, err := h.cm.Publish(ctx, pb)
+	_, err = h.cm.Publish(ctx, pb)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := <-rChan
-	return resp, nil
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context ended")
+	case resp = <-rChan:
+		return resp, nil
+	}
 }
 
 func (h *Handler) responseHandler(pb *paho.Publish) {
