@@ -22,7 +22,7 @@ func Test_match(t *testing.T) {
 		{"hash2", "a/#", "a/b", true},
 		{"hash3", "b/#", "a/b", false},
 		{"hash4", "#", "", true},
-		{"share1", "$share/a/b", "a/b", true},
+		{"share1", "$share/group1/a/b", "a/b", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 )
 
@@ -13,21 +14,31 @@ import (
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
-	c          *paho.Client
-	correlData map[string]chan *paho.Publish
+	cm            *autopaho.ConnectionManager
+	correlData    map[string]chan *paho.Publish
+	responseTopic string
 }
 
-func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
+type HandlerOpts struct {
+	Conn             *autopaho.ConnectionManager
+	Router           paho.Router
+	ResponseTopicFmt string
+	ClientID         string
+}
+
+func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
 	h := &Handler{
-		c:          c,
+		cm:         opts.Conn,
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	h.responseTopic = fmt.Sprintf(opts.ResponseTopicFmt, opts.ClientID)
 
-	_, err := c.Subscribe(ctx, &paho.Subscribe{
+	opts.Router.RegisterHandler(h.responseTopic, h.responseHandler)
+
+	_, err := opts.Conn.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
+			h.responseTopic: {QoS: 1},
 		},
 	})
 	if err != nil {
@@ -54,7 +65,7 @@ func (h *Handler) getCorrelIDChan(cID string) chan *paho.Publish {
 	return rChan
 }
 
-func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish, error) {
+func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Publish, err error) {
 	cID := fmt.Sprintf("%d", time.Now().UnixNano())
 	rChan := make(chan *paho.Publish)
 
@@ -65,16 +76,20 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish,
 	}
 
 	pb.Properties.CorrelationData = []byte(cID)
-	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
+	pb.Properties.ResponseTopic = h.responseTopic
 	pb.Retain = false
 
-	_, err := h.c.Publish(ctx, pb)
+	_, err = h.cm.Publish(ctx, pb)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := <-rChan
-	return resp, nil
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("context ended")
+	case resp = <-rChan:
+		return resp, nil
+	}
 }
 
 func (h *Handler) responseHandler(pb *paho.Publish) {
