@@ -221,7 +221,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	var (
 		caPacket    *packets.Connack
 		caPacketCh  = make(chan *packets.Connack)
-		caPacketErr = make(chan error)
+		caPacketErr = make(chan error, 1)
 	)
 	go c.expectConnack(caPacketCh, caPacketErr)
 	select {
