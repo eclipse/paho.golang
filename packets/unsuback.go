@@ -15,7 +15,11 @@ type Unsuback struct {
 }
 
 func (u *Unsuback) String() string {
-	return fmt.Sprintf("UNSUBACK: ReasonCode:%v PacketID:%d Properties:\n%s", u.Reasons, u.PacketID, u.Properties)
+	if isVer4() {
+		return fmt.Sprintf("UNSUBACK: PacketID:%d\n", u.PacketID)
+	} else {
+		return fmt.Sprintf("UNSUBACK: ReasonCode:%v PacketID:%d Properties:\n%s", u.Reasons, u.PacketID, u.Properties)
+	}
 }
 
 // UnsubackSuccess, etc are the list of valid unsuback reason codes.
@@ -37,12 +41,14 @@ func (u *Unsuback) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = u.Properties.Unpack(r, UNSUBACK)
+	err = genPropPack(UNSUBACK).Unpack(r, u.Properties)
 	if err != nil {
 		return err
 	}
 
-	u.Reasons = r.Bytes()
+	if !isVer4() {
+		u.Reasons = r.Bytes()
+	}
 
 	return nil
 }
@@ -51,9 +57,13 @@ func (u *Unsuback) Unpack(r *bytes.Buffer) error {
 func (u *Unsuback) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeUint16(u.PacketID, &b)
-	idvp := u.Properties.Pack(UNSUBACK)
-	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp, u.Reasons}
+	if isVer4() {
+		return net.Buffers{b.Bytes()}
+	} else {
+		var propBuf bytes.Buffer
+		genPropPack(UNSUBACK).Pack(u.Properties, &propBuf)
+		return net.Buffers{b.Bytes(), propBuf.Bytes(), u.Reasons}
+	}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

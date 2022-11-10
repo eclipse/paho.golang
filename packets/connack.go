@@ -18,7 +18,7 @@ const (
 	ConnackSuccess                     = 0x00
 	ConnackUnspecifiedError            = 0x80
 	ConnackMalformedPacket             = 0x81
-	ConnackProtocolError               = 0x81
+	ConnackProtocolError               = 0x82
 	ConnackImplementationSpecificError = 0x83
 	ConnackUnsupportedProtocolVersion  = 0x84
 	ConnackInvalidClientID             = 0x85
@@ -43,7 +43,7 @@ func (c *Connack) String() string {
 	return fmt.Sprintf("CONNACK: ReasonCode:%d SessionPresent:%t\nProperties:\n%s", c.ReasonCode, c.SessionPresent, c.Properties)
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connack) Unpack(r *bytes.Buffer) error {
 	connackFlags, err := r.ReadByte()
 	if err != nil {
@@ -55,8 +55,11 @@ func (c *Connack) Unpack(r *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
+	if isVer4() {
+		c.ReasonCode = connackReasonFromV311(c.ReasonCode)
+	}
 
-	err = c.Properties.Unpack(r, CONNACK)
+	err = genPropPack(CONNACK).Unpack(r, c.Properties)
 	if err != nil {
 		return err
 	}
@@ -73,17 +76,14 @@ func (c *Connack) Buffers() net.Buffers {
 	} else {
 		header.WriteByte(0)
 	}
+	if isVer4() {
+		c.ReasonCode = connackReasonToV311(c.ReasonCode)
+	}
 	header.WriteByte(c.ReasonCode)
 
-	idvp := c.Properties.Pack(CONNACK)
-	propLen := encodeVBI(len(idvp))
-
-	n := net.Buffers{header.Bytes(), propLen}
-	if len(idvp) > 0 {
-		n = append(n, idvp)
-	}
-
-	return n
+	propBuf := bytes.Buffer{}
+	genPropPack(CONNACK).Pack(c.Properties, &propBuf)
+	return net.Buffers{header.Bytes(), propBuf.Bytes()}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

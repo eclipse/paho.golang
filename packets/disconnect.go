@@ -52,6 +52,9 @@ const (
 
 // Unpack is the implementation of the interface required function for a packet
 func (d *Disconnect) Unpack(r *bytes.Buffer) error {
+	if isVer4() {
+		return nil
+	}
 	var err error
 	d.ReasonCode, err = r.ReadByte()
 	if err != nil {
@@ -68,6 +71,9 @@ func (d *Disconnect) Unpack(r *bytes.Buffer) error {
 
 // Buffers is the implementation of the interface required function for a packet
 func (d *Disconnect) Buffers() net.Buffers {
+	if isVer4() {
+		return nil
+	}
 	idvp := d.Properties.Pack(DISCONNECT)
 	propLen := encodeVBI(len(idvp))
 	n := net.Buffers{[]byte{d.ReasonCode}, propLen}
@@ -87,6 +93,9 @@ func (d *Disconnect) WriteTo(w io.Writer) (int64, error) {
 
 // Reason returns a string representation of the meaning of the ReasonCode
 func (d *Disconnect) Reason() string {
+	if isVer4() {
+		return ""
+	}
 	switch d.ReasonCode {
 	case 0:
 		return "Normal disconnection - Close the connection normally. Do not send the Will Message."

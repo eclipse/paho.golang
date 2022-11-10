@@ -20,9 +20,15 @@ func (s *Subscribe) String() string {
 
 	fmt.Fprintf(&b, "SUBSCRIBE: PacketID:%d Subscriptions:\n", s.PacketID)
 	for sub, o := range s.Subscriptions {
-		fmt.Fprintf(&b, "\t%s: QOS:%d RetainHandling:%X NoLocal:%t RetainAsPublished:%t\n", sub, o.QoS, o.RetainHandling, o.NoLocal, o.RetainAsPublished)
+		fmt.Fprintf(&b, "\t%s: QOS:%d", sub, o.QoS)
+		if !isVer4() {
+			fmt.Fprintf(&b, " RetainHandling:%X NoLocal:%t RetainAsPublished:%t", o.RetainHandling, o.NoLocal, o.RetainAsPublished)
+		}
+		fmt.Fprintf(&b, "\n")
 	}
-	fmt.Fprintf(&b, "Properties:\n%s", s.Properties)
+	if !isVer4() {
+		fmt.Fprintf(&b, "Properties:\n%s", s.Properties)
+	}
 
 	return b.String()
 }
@@ -39,13 +45,15 @@ type SubOptions struct {
 func (s *SubOptions) Pack() byte {
 	var ret byte
 	ret |= s.QoS & 0x03
-	if s.NoLocal {
-		ret |= 1 << 2
+	if !isVer4() {
+		if s.NoLocal {
+			ret |= 1 << 2
+		}
+		if s.RetainAsPublished {
+			ret |= 1 << 3
+		}
+		ret |= s.RetainHandling & 0x30
 	}
-	if s.RetainAsPublished {
-		ret |= 1 << 3
-	}
-	ret |= s.RetainHandling & 0x30
 
 	return ret
 }
@@ -58,9 +66,11 @@ func (s *SubOptions) Unpack(r *bytes.Buffer) error {
 	}
 
 	s.QoS = b & 0x03
-	s.NoLocal = (b & 1 << 2) == 1
-	s.RetainAsPublished = (b & 1 << 3) == 1
-	s.RetainHandling = b & 0x30
+	if !isVer4() {
+		s.NoLocal = (b & 1 << 2) == 1
+		s.RetainAsPublished = (b & 1 << 3) == 1
+		s.RetainHandling = b & 0x30
+	}
 
 	return nil
 }
@@ -73,7 +83,7 @@ func (s *Subscribe) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = s.Properties.Unpack(r, SUBSCRIBE)
+	err = genPropPack(SUBSCRIBE).Unpack(r, s.Properties)
 	if err != nil {
 		return err
 	}
@@ -102,9 +112,9 @@ func (s *Subscribe) Buffers() net.Buffers {
 		writeString(t, &subs)
 		subs.WriteByte(o.Pack())
 	}
-	idvp := s.Properties.Pack(SUBSCRIBE)
-	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp, subs.Bytes()}
+	var propBuf bytes.Buffer
+	genPropPack(SUBSCRIBE).Pack(s.Properties, &propBuf)
+	return net.Buffers{b.Bytes(), propBuf.Bytes(), subs.Bytes()}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

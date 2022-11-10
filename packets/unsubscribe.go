@@ -15,7 +15,11 @@ type Unsubscribe struct {
 }
 
 func (u *Unsubscribe) String() string {
-	return fmt.Sprintf("UNSUBSCRIBE: PacketID:%d Topics:%v Properties:\n%s", u.PacketID, u.Topics, u.Properties)
+	if isVer4() {
+		return fmt.Sprintf("UNSUBSCRIBE: PacketID:%d Topics:%v\n", u.PacketID, u.Topics)
+	} else {
+		return fmt.Sprintf("UNSUBSCRIBE: PacketID:%d Topics:%v Properties:\n%s", u.PacketID, u.Topics, u.Properties)
+	}
 }
 
 // Unpack is the implementation of the interface required function for a packet
@@ -26,7 +30,7 @@ func (u *Unsubscribe) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = u.Properties.Unpack(r, UNSUBSCRIBE)
+	err = genPropPack(UNSUBSCRIBE).Unpack(r, u.Properties)
 	if err != nil {
 		return err
 	}
@@ -53,9 +57,9 @@ func (u *Unsubscribe) Buffers() net.Buffers {
 	for _, t := range u.Topics {
 		writeString(t, &topics)
 	}
-	idvp := u.Properties.Pack(UNSUBSCRIBE)
-	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp, topics.Bytes()}
+	var propBuf bytes.Buffer
+	genPropPack(UNSUBSCRIBE).Pack(u.Properties, &propBuf)
+	return net.Buffers{b.Bytes(), propBuf.Bytes(), topics.Bytes()}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

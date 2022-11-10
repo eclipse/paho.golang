@@ -34,7 +34,7 @@ const (
 	SubackWildcardsubscriptionsnotsupported   = 0xA2
 )
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (s *Suback) Unpack(r *bytes.Buffer) error {
 	var err error
 	s.PacketID, err = readUint16(r)
@@ -42,12 +42,15 @@ func (s *Suback) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = s.Properties.Unpack(r, SUBACK)
+	err = genPropPack(SUBACK).Unpack(r, s.Properties)
 	if err != nil {
 		return err
 	}
 
 	s.Reasons = r.Bytes()
+	if isVer4() {
+		s.Reasons = subackReasonsFromV311(s.Reasons)
+	}
 
 	return nil
 }
@@ -56,9 +59,13 @@ func (s *Suback) Unpack(r *bytes.Buffer) error {
 func (s *Suback) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeUint16(s.PacketID, &b)
-	idvp := s.Properties.Pack(SUBACK)
-	propLen := encodeVBI(len(idvp))
-	return net.Buffers{b.Bytes(), propLen, idvp, s.Reasons}
+
+	var propBuf bytes.Buffer
+	genPropPack(SUBACK).Pack(s.Properties, &propBuf)
+	if isVer4() {
+		s.Reasons = subackReasonsToV311(s.Reasons)
+	}
+	return net.Buffers{b.Bytes(), propBuf.Bytes(), s.Reasons}
 }
 
 // WriteTo is the implementation of the interface required function for a packet

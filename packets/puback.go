@@ -31,8 +31,11 @@ const (
 func (p *Puback) String() string {
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "PUBACK: PacketID:%d ReasonCode:%X", p.PacketID, p.ReasonCode)
-	if p.Properties != nil {
+	fmt.Fprintf(&b, "PUBACK: PacketID:%d", p.PacketID)
+	if !isVer4() {
+		fmt.Fprintf(&b, " ReasonCode:%X", p.ReasonCode)
+	}
+	if p.Properties != nil && !isVer4() {
 		fmt.Fprintf(&b, " Properties:\n%s", p.Properties)
 	} else {
 		fmt.Fprint(&b, "\n")
@@ -41,7 +44,7 @@ func (p *Puback) String() string {
 	return b.String()
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (p *Puback) Unpack(r *bytes.Buffer) error {
 	var err error
 	success := r.Len() == 2
@@ -50,7 +53,7 @@ func (p *Puback) Unpack(r *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	if !success {
+	if !success && !isVer4() {
 		p.ReasonCode, err = r.ReadByte()
 		if err != nil {
 			return err
@@ -70,14 +73,19 @@ func (p *Puback) Unpack(r *bytes.Buffer) error {
 func (p *Puback) Buffers() net.Buffers {
 	var b bytes.Buffer
 	writeUint16(p.PacketID, &b)
-	b.WriteByte(p.ReasonCode)
-	idvp := p.Properties.Pack(PUBACK)
-	propLen := encodeVBI(len(idvp))
-	n := net.Buffers{b.Bytes(), propLen}
-	if len(idvp) > 0 {
-		n = append(n, idvp)
+
+	if isVer4() {
+		return net.Buffers{b.Bytes()}
+	} else {
+		b.WriteByte(p.ReasonCode)
+		idvp := p.Properties.Pack(PUBACK)
+		propLen := encodeVBI(len(idvp))
+		n := net.Buffers{b.Bytes(), propLen}
+		if len(idvp) > 0 {
+			n = append(n, idvp)
+		}
+		return n
 	}
-	return n
 }
 
 // WriteTo is the implementation of the interface required function for a packet
@@ -90,6 +98,9 @@ func (p *Puback) WriteTo(w io.Writer) (int64, error) {
 
 // Reason returns a string representation of the meaning of the ReasonCode
 func (p *Puback) Reason() string {
+	if isVer4() {
+		return ""
+	}
 	switch p.ReasonCode {
 	case 0:
 		return "The message is accepted. Publication of the QoS 1 message proceeds."

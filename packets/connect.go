@@ -85,7 +85,7 @@ func (c *Connect) UnpackFlags(b byte) {
 	c.UsernameFlag = 1&(b>>7) > 0
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connect) Unpack(r *bytes.Buffer) error {
 	var err error
 
@@ -107,7 +107,9 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 		return err
 	}
 
-	err = c.Properties.Unpack(r, CONNECT)
+	propPack := genPropPack(CONNECT)
+
+	err = propPack.Unpack(r, c.Properties)
 	if err != nil {
 		return err
 	}
@@ -118,8 +120,7 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 	}
 
 	if c.WillFlag {
-		c.WillProperties = &Properties{}
-		err = c.WillProperties.Unpack(r, CONNECT)
+		err = propPack.Unpack(r, c.WillProperties)
 		if err != nil {
 			return err
 		}
@@ -153,20 +154,17 @@ func (c *Connect) Unpack(r *bytes.Buffer) error {
 // Buffers is the implementation of the interface required function for a packet
 func (c *Connect) Buffers() net.Buffers {
 	var cp bytes.Buffer
+	propPack := genPropPack(CONNECT)
 
 	writeString(c.ProtocolName, &cp)
-	cp.WriteByte(c.ProtocolVersion)
+	cp.WriteByte(protocolVersion(c.ProtocolVersion))
 	cp.WriteByte(c.PackFlags())
 	writeUint16(c.KeepAlive, &cp)
-	idvp := c.Properties.Pack(CONNECT)
-	encodeVBIdirect(len(idvp), &cp)
-	cp.Write(idvp)
+	propPack.Pack(c.Properties, &cp)
 
 	writeString(c.ClientID, &cp)
 	if c.WillFlag {
-		willIdvp := c.WillProperties.Pack(CONNECT)
-		encodeVBIdirect(len(willIdvp), &cp)
-		cp.Write(willIdvp)
+		propPack.Pack(c.WillProperties, &cp)
 		writeString(c.WillTopic, &cp)
 		writeBinary(c.WillMessage, &cp)
 	}

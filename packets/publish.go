@@ -23,7 +23,7 @@ func (p *Publish) String() string {
 	return fmt.Sprintf("PUBLISH: PacketID:%d QOS:%d Topic:%s Duplicate:%t Retain:%t Payload:\n%s\nProperties\n%s", p.PacketID, p.QoS, p.Topic, p.Duplicate, p.Retain, string(p.Payload), p.Properties)
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (p *Publish) Unpack(r *bytes.Buffer) error {
 	var err error
 	p.Topic, err = readString(r)
@@ -37,7 +37,7 @@ func (p *Publish) Unpack(r *bytes.Buffer) error {
 		}
 	}
 
-	err = p.Properties.Unpack(r, PUBLISH)
+	err = genPropPack(PUBLISH).Unpack(r, p.Properties)
 	if err != nil {
 		return err
 	}
@@ -57,9 +57,10 @@ func (p *Publish) Buffers() net.Buffers {
 	if p.QoS > 0 {
 		_ = writeUint16(p.PacketID, &b)
 	}
-	idvp := p.Properties.Pack(PUBLISH)
-	encodeVBIdirect(len(idvp), &b)
-	return net.Buffers{b.Bytes(), idvp, p.Payload}
+
+	var propBuf bytes.Buffer
+	genPropPack(PUBLISH).Pack(p.Properties, &propBuf)
+	return net.Buffers{b.Bytes(), propBuf.Bytes(), p.Payload}
 
 }
 

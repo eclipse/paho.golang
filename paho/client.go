@@ -21,6 +21,21 @@ const (
 	MQTTv5   MQTTVersion = 5
 )
 
+func (v MQTTVersion) ValidByte() byte {
+	return byte(v.ValidVer())
+}
+
+func (v MQTTVersion) ValidVer() MQTTVersion {
+	switch v {
+	case MQTTv311:
+		fallthrough
+	case MQTTv5:
+		return v
+	default:
+		return MQTTv5
+	}
+}
+
 const defaultSendAckInterval = 50 * time.Millisecond
 
 var (
@@ -65,6 +80,7 @@ type (
 		// SendAcksInterval is used only when EnableManualAcknowledgment is true
 		// it determines how often the client tries to send a batch of acknowledgments in the right order to the server.
 		SendAcksInterval time.Duration
+		ProtocolVersion  MQTTVersion
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -134,6 +150,7 @@ func NewClient(conf ClientConfig) *Client {
 		debug:        NOOPLogger{},
 	}
 
+	c.ProtocolVersion = c.ProtocolVersion.ValidVer()
 	if c.Persistence == nil {
 		c.Persistence = &noopPersistence{}
 	}
@@ -209,7 +226,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 	ccp := cp.Packet()
 	ccp.ProtocolName = "MQTT"
-	ccp.ProtocolVersion = 5
+	ccp.ProtocolVersion = c.ProtocolVersion.ValidByte()
 
 	c.debug.Println("sending CONNECT")
 	if _, err := ccp.WriteTo(c.Conn); err != nil {

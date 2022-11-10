@@ -36,6 +36,9 @@ func (a *Auth) String() string {
 
 // Unpack is the implementation of the interface required function for a packet
 func (a *Auth) Unpack(r *bytes.Buffer) error {
+	if isVer4() {
+		return nil
+	}
 	var err error
 
 	success := r.Len() == 0
@@ -70,6 +73,9 @@ func (a *Auth) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (a *Auth) WriteTo(w io.Writer) (int64, error) {
+	if isVer4() {
+		return 0, nil
+	}
 	cp := &ControlPacket{FixedHeader: FixedHeader{Type: AUTH}}
 	cp.Content = a
 
