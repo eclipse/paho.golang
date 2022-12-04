@@ -2,12 +2,15 @@ package rpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 )
+
+const defaultRequestTimeout = time.Second * 10
 
 // Handler is the struct providing a request/response functionality for the paho
 // MQTT v5 client
@@ -54,7 +57,7 @@ func (h *Handler) getCorrelIDChan(cID string) chan *paho.Publish {
 	return rChan
 }
 
-func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish, error) {
+func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Publish, err error) {
 	cID := fmt.Sprintf("%d", time.Now().UnixNano())
 	rChan := make(chan *paho.Publish)
 
@@ -68,13 +71,19 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish,
 	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
 	pb.Retain = false
 
-	_, err := h.c.Publish(ctx, pb)
+	_, err = h.c.Publish(ctx, pb)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := <-rChan
-	return resp, nil
+	select {
+	case <-time.After(defaultRequestTimeout):
+		return nil, errors.New("request timeout")
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case resp = <-rChan:
+		return resp, nil
+	}
 }
 
 func (h *Handler) responseHandler(pb *paho.Publish) {
