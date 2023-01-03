@@ -10,27 +10,35 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-const defaultRequestTimeout = time.Second * 10
+var ErrRequestTimeout = errors.New("request timeout")
 
 // Handler is the struct providing a request/response functionality for the paho
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
-	c          *paho.Client
-	correlData map[string]chan *paho.Publish
+	c              *paho.Client
+	correlData     map[string]chan *paho.Publish
+	requestTimeout *time.Duration
 }
 
-func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
+// HandlerInput is the handler inputs
+type HandlerInput struct {
+	Client         *paho.Client   // Client is the paho client
+	RequestTimeout *time.Duration // RequestTimeout - if the value sets, it will be used as the request's timeout config
+}
+
+func NewHandler(ctx context.Context, in HandlerInput) (*Handler, error) {
 	h := &Handler{
-		c:          c,
-		correlData: make(map[string]chan *paho.Publish),
+		c:              in.Client,
+		correlData:     make(map[string]chan *paho.Publish),
+		requestTimeout: in.RequestTimeout,
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	h.c.Router.RegisterHandler(fmt.Sprintf("%s/responses", h.c.ClientID), h.responseHandler)
 
-	_, err := c.Subscribe(ctx, &paho.Subscribe{
+	_, err := h.c.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
+			fmt.Sprintf("%s/responses", h.c.ClientID): {QoS: 1},
 		},
 	})
 	if err != nil {
@@ -76,11 +84,20 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Pub
 		return nil, err
 	}
 
+	requestCtx := ctx
+	if h.requestTimeout != nil {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithTimeout(ctx, *h.requestTimeout)
+		defer cancel()
+	}
+
 	select {
-	case <-time.After(defaultRequestTimeout):
-		return nil, errors.New("request timeout")
-	case <-ctx.Done():
-		return nil, ctx.Err()
+	case <-requestCtx.Done():
+		errCtx := requestCtx.Err()
+		if errors.Is(errCtx, context.DeadlineExceeded) {
+			return nil, ErrRequestTimeout
+		}
+		return nil, errCtx
 	case resp = <-rChan:
 		return resp, nil
 	}
