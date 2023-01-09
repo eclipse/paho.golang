@@ -1,5 +1,5 @@
 Eclipse Paho MQTT Go client
-===========================
+============================
 
 This repository contains the source code for the [Eclipse Paho](http://eclipse.org/paho) MQTT Go client library.
 
