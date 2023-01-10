@@ -2,15 +2,12 @@ package rpc
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 )
-
-var ErrRequestTimeout = errors.New("request timeout")
 
 // Handler is the struct providing a request/response functionality for the paho
 // MQTT v5 client
@@ -93,11 +90,7 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Pub
 
 	select {
 	case <-requestCtx.Done():
-		errCtx := requestCtx.Err()
-		if errors.Is(errCtx, context.DeadlineExceeded) {
-			return nil, ErrRequestTimeout
-		}
-		return nil, errCtx
+		return nil, requestCtx.Err()
 	case resp = <-rChan:
 		return resp, nil
 	}
