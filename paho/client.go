@@ -409,7 +409,11 @@ func (c *Client) incoming() {
 		case <-c.stop:
 			return
 		default:
-			recv, err := packets.ReadPacket(c.Conn)
+			recv, err := packets.ReadPacketByMaximum(c.Conn, c.clientProps.MaximumPacketSize)
+			if err == packets.ErrPacketTooLarge {
+				go c.errorWithDisconnect(err, &Disconnect{ReasonCode: 0x95})
+				return
+			}
 			if err != nil {
 				go c.error(err)
 				return
@@ -555,6 +559,12 @@ func (c *Client) error(e error) {
 	c.debug.Println("error called:", e)
 	c.close()
 	c.workers.Wait()
+	go c.OnClientError(e)
+}
+
+func (c *Client) errorWithDisconnect(e error, d *Disconnect) {
+	c.debug.Println("error called:", e)
+	c.Disconnect(d)
 	go c.OnClientError(e)
 }
 
@@ -863,7 +873,11 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*Publis
 }
 
 func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error) {
-	recv, err := packets.ReadPacket(c.Conn)
+	recv, err := packets.ReadPacketByMaximum(c.Conn, c.clientProps.MaximumPacketSize)
+	if err == packets.ErrPacketTooLarge {
+		go c.errorWithDisconnect(err, &Disconnect{ReasonCode: 0x95})
+		return
+	}
 	if err != nil {
 		errs <- err
 		return

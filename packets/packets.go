@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"errors"
 )
 
 // PacketType is a type alias to byte representing the different
@@ -31,6 +32,10 @@ const (
 	PINGRESP
 	DISCONNECT
 	AUTH
+)
+
+var (
+	ErrPacketTooLarge = errors.New("Received packet whose size exceeds client's maximum packet size.")
 )
 
 type (
@@ -183,9 +188,10 @@ func NewControlPacket(t byte) *ControlPacket {
 	return cp
 }
 
-// ReadPacket reads a control packet from a io.Reader and returns a completed
+// ReadPacketByMaximum reads a control packet from a io.Reader and returns a completed
 // struct with the appropriate data
-func ReadPacket(r io.Reader) (*ControlPacket, error) {
+// If maximumPacketSize == 0, packet size will be not checked
+func ReadPacketByMaximum(r io.Reader, maximumPacketSize uint32) (*ControlPacket, error) {
 	t := [1]byte{}
 	_, err := io.ReadFull(r, t[:])
 	if err != nil {
@@ -252,7 +258,11 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 	if err != nil {
 		return nil, err
 	}
+	vbiLen := vbi.Len()
 	cp.remainingLength, err = decodeVBI(vbi)
+	if maximumPacketSize != 0 && uint32(1 + vbiLen + cp.remainingLength) > maximumPacketSize {
+		return nil, ErrPacketTooLarge
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -273,6 +283,13 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 		return nil, err
 	}
 	return cp, nil
+}
+
+// ReadPacket reads a control packet from a io.Reader without considering client's maximum packet size limit
+// and returns a completed struct with the appropriate data
+// This implementation leaves for compatibility considerations.
+func ReadPacket (r io.Reader) (*ControlPacket, error) {
+	return ReadPacketByMaximum(r, 0)
 }
 
 // WriteTo writes a packet to an io.Writer, handling packing all the parts of
