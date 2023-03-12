@@ -66,7 +66,7 @@ type ClientConfig struct {
 	connectPacketBuilder func(*paho.Connect) *paho.Connect
 
 	// We include the full paho.ClientConfig in order to simplify moving between the two packages.
-	// Note that that Conn will be ignored.
+	// Note that Conn will be ignored.
 	paho.ClientConfig
 }
 
