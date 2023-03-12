@@ -47,8 +47,9 @@ type ClientConfig struct {
 	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
 	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
 
-	Debug     paho.Logger // By default set to NOOPLogger{},set to a logger for debugging info
-	PahoDebug paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
+	Debug      paho.Logger // By default set to NOOPLogger{},set to a logger for debugging info
+	PahoDebug  paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
+	PahoErrors paho.Logger // error logger passed to the paho package (will default to NOOPLogger{})
 
 	connectUsername string
 	connectPassword []byte
@@ -66,7 +67,7 @@ type ClientConfig struct {
 	connectPacketBuilder func(*paho.Connect) *paho.Connect
 
 	// We include the full paho.ClientConfig in order to simplify moving between the two packages.
-	// Note that that Conn will be ignored.
+	// Note that Conn will be ignored.
 	paho.ClientConfig
 }
 
@@ -214,6 +215,10 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 
 			if cfg.PahoDebug != nil {
 				cli.SetDebugLogger(cfg.PahoDebug)
+			}
+
+			if cfg.PahoErrors != nil {
+				cli.SetErrorLogger(cfg.PahoErrors)
 			}
 
 			if cfg.OnConnectionUp != nil {
