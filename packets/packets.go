@@ -247,6 +247,8 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 	cp.Flags = t[0] & 0xF
 	if cp.Type == PUBLISH {
 		cp.Content.(*Publish).QoS = (cp.Flags & 0x6) >> 1
+		cp.Content.(*Publish).Duplicate = (cp.Flags & 0x08) > 0
+		cp.Content.(*Publish).Retain = (cp.Flags & 0x01) > 0
 	}
 	vbi, err := getVBI(r)
 	if err != nil {

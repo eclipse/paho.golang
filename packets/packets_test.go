@@ -480,3 +480,26 @@ func TestNewThreadSafeWrapper(t *testing.T) {
 		t.Error("NewThreadSafeConn does not implement sync.Locker")
 	}
 }
+
+func TestReadPacketPublish(t *testing.T) {
+	var (
+		rawData = []byte{48, 11, 0, 4, 116, 101, 115, 116, 0, 116, 101, 115, 116}
+	)
+	c, err := ReadPacket(bufio.NewReader(bytes.NewReader(rawData)))
+	require.Nil(t, err)
+	assert.Equal(t, uint8(0), c.Content.(*Publish).QoS)
+	assert.Equal(t, false, c.Content.(*Publish).Retain)
+	assert.Equal(t, false, c.Content.(*Publish).Duplicate)
+	assert.Equal(t, []byte("test"), c.Content.(*Publish).Payload)
+	assert.Equal(t, "test", c.Content.(*Publish).Topic)
+
+	rawData = []byte{59, 13, 0, 4, 116, 101, 115, 116, 0, 18, 0, 116, 101, 115, 116}
+	c, err = ReadPacket(bufio.NewReader(bytes.NewReader(rawData)))
+	require.Nil(t, err)
+	assert.Equal(t, true, c.Content.(*Publish).Retain)
+	assert.Equal(t, true, c.Content.(*Publish).Duplicate)
+	assert.Equal(t, []byte("test"), c.Content.(*Publish).Payload)
+	assert.Equal(t, "test", c.Content.(*Publish).Topic)
+	assert.Equal(t, uint16(18), c.Content.(*Publish).PacketID)
+
+}
