@@ -43,8 +43,8 @@ type CPContext struct {
 }
 
 // MIDs is the default MIDService provided by this library.
-// It uses a map of uint16 to *CPContext to track responses
-// to messages with a messageid
+// It uses a slice of *CPContext to track responses
+// to messages with a messageid tracking the last used message id
 type MIDs struct {
 	sync.Mutex
 	lastMid uint16

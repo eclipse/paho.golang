@@ -113,8 +113,8 @@ func listener(server, rTopic, username, password string) {
 		fmt.Printf("Connected to %s\n", server)
 
 		_, err = c.Subscribe(context.Background(), &paho.Subscribe{
-			Subscriptions: map[string]paho.SubscribeOptions{
-				rTopic: paho.SubscribeOptions{QoS: 0},
+			Subscriptions: []paho.SubscribeOptions{
+				{Topic: rTopic, QoS: 0},
 			},
 		})
 		if err != nil {

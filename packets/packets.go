@@ -157,10 +157,7 @@ func NewControlPacket(t byte) *ControlPacket {
 		cp.Content = &Pubcomp{Properties: &Properties{}}
 	case SUBSCRIBE:
 		cp.Flags = 2
-		cp.Content = &Subscribe{
-			Subscriptions: make(map[string]SubOptions),
-			Properties:    &Properties{},
-		}
+		cp.Content = &Subscribe{Properties: &Properties{}}
 	case SUBACK:
 		cp.Content = &Suback{Properties: &Properties{}}
 	case UNSUBSCRIBE:
@@ -220,10 +217,7 @@ func ReadPacket(r io.Reader) (*ControlPacket, error) {
 		cp.Content = &Pubcomp{Properties: &Properties{}}
 	case SUBSCRIBE:
 		cp.Flags = 2
-		cp.Content = &Subscribe{
-			Subscriptions: make(map[string]SubOptions),
-			Properties:    &Properties{},
-		}
+		cp.Content = &Subscribe{Properties: &Properties{}}
 	case SUBACK:
 		cp.Content = &Suback{Properties: &Properties{}}
 	case UNSUBSCRIBE:

@@ -96,8 +96,8 @@ func listener(rTopic string) {
 		})
 
 		_, err = cm.Subscribe(ctx, &paho.Subscribe{
-			Subscriptions: map[string]paho.SubscribeOptions{
-				rTopic: {QoS: 0},
+			Subscriptions: []paho.SubscribeOptions{
+				{Topic: rTopic, QoS: 0},
 			},
 		})
 		if err != nil {

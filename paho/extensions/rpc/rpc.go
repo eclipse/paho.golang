@@ -26,8 +26,8 @@ func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
 	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
 
 	_, err := c.Subscribe(ctx, &paho.Subscribe{
-		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
+		Subscriptions: []paho.SubscribeOptions{
+			{Topic: fmt.Sprintf("%s/responses", c.ClientID), QoS: 1},
 		},
 	})
 	if err != nil {
