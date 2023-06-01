@@ -427,14 +427,14 @@ func (c *Client) incoming() {
 				c.debug.Println("received AUTH")
 				ap := recv.Content.(*packets.Auth)
 				switch ap.ReasonCode {
-				case 0x0:
+				case packets.AuthSuccess:
 					if c.AuthHandler != nil {
 						go c.AuthHandler.Authenticated()
 					}
 					if c.raCtx != nil {
 						c.raCtx.Return <- *recv
 					}
-				case 0x18:
+				case packets.AuthContinueAuthentication:
 					if c.AuthHandler != nil {
 						if _, err := c.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.Conn); err != nil {
 							go c.error(err)
