@@ -1,2 +1,3 @@
 bin/
 autopaho/cmd/rpc/.env
+.idea

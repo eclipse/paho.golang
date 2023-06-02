@@ -179,7 +179,10 @@ func main() {
 
 	fmt.Printf("Connected to %s\n", *server)
 
-	h, err := rpc.NewHandler(ctx, c)
+	h, err := rpc.NewHandler(ctx, rpc.HandlerInput{
+		Client:         c,
+		RequestTimeout: nil, // no timeouts
+	})
 	if err != nil {
 		log.Fatal(err)
 	}

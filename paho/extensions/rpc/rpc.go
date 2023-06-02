@@ -13,21 +13,29 @@ import (
 // MQTT v5 client
 type Handler struct {
 	sync.Mutex
-	c          *paho.Client
-	correlData map[string]chan *paho.Publish
+	c              *paho.Client
+	correlData     map[string]chan *paho.Publish
+	requestTimeout *time.Duration
 }
 
-func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
+// HandlerInput is the handler inputs
+type HandlerInput struct {
+	Client         *paho.Client   // Client is the paho client
+	RequestTimeout *time.Duration // RequestTimeout - if the value sets, it will be used as the request's timeout config
+}
+
+func NewHandler(ctx context.Context, in HandlerInput) (*Handler, error) {
 	h := &Handler{
-		c:          c,
-		correlData: make(map[string]chan *paho.Publish),
+		c:              in.Client,
+		correlData:     make(map[string]chan *paho.Publish),
+		requestTimeout: in.RequestTimeout,
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	h.c.Router.RegisterHandler(fmt.Sprintf("%s/responses", h.c.ClientID), h.responseHandler)
 
-	_, err := c.Subscribe(ctx, &paho.Subscribe{
+	_, err := h.c.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: map[string]paho.SubscribeOptions{
-			fmt.Sprintf("%s/responses", c.ClientID): {QoS: 1},
+			fmt.Sprintf("%s/responses", h.c.ClientID): {QoS: 1},
 		},
 	})
 	if err != nil {
@@ -54,7 +62,7 @@ func (h *Handler) getCorrelIDChan(cID string) chan *paho.Publish {
 	return rChan
 }
 
-func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish, error) {
+func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (resp *paho.Publish, err error) {
 	cID := fmt.Sprintf("%d", time.Now().UnixNano())
 	rChan := make(chan *paho.Publish)
 
@@ -68,13 +76,24 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish,
 	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
 	pb.Retain = false
 
-	_, err := h.c.Publish(ctx, pb)
+	_, err = h.c.Publish(ctx, pb)
 	if err != nil {
 		return nil, err
 	}
 
-	resp := <-rChan
-	return resp, nil
+	requestCtx := ctx
+	if h.requestTimeout != nil {
+		var cancel context.CancelFunc
+		requestCtx, cancel = context.WithTimeout(ctx, *h.requestTimeout)
+		defer cancel()
+	}
+
+	select {
+	case <-requestCtx.Done():
+		return nil, requestCtx.Err()
+	case resp = <-rChan:
+		return resp, nil
+	}
 }
 
 func (h *Handler) responseHandler(pb *paho.Publish) {
