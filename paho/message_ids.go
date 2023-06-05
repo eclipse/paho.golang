@@ -56,16 +56,19 @@ type MIDs struct {
 func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := uint16(1); i < midMax; i++ {
-		v := (m.lastMid + i) % midMax
-		if v == 0 {
-			continue
+	for i := uint16(0); i < midMax; i++ {
+		v := (m.lastMid + i) % midMax + 1
+		if m.index[v-1] != nil {
+			// In some case, additionally check if last MID is blank at last loop, because it may be already blank here.
+			// When last MID is 0, MIDs was just initialized and checking isn't required.
+			if !(m.lastMid != 0 && i == midMax - 1 && v != m.lastMid  && m.index[m.lastMid-1] == nil) {
+				continue
+			}
+			v++
 		}
-		if inuse := m.index[v]; inuse == nil {
-			m.index[v] = c
-			m.lastMid = v
-			return v, nil
-		}
+		m.index[v-1] = c
+		m.lastMid = v
+		return v, nil
 	}
 	return 0, ErrorMidsExhausted
 }
@@ -75,14 +78,14 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 func (m *MIDs) Get(i uint16) *CPContext {
 	m.Lock()
 	defer m.Unlock()
-	return m.index[i]
+	return m.index[i-1]
 }
 
 // Free is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Free(i uint16) {
 	m.Lock()
-	m.index[i] = nil
+	m.index[i-1] = nil
 	m.Unlock()
 }
 
