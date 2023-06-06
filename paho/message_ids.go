@@ -48,7 +48,7 @@ type CPContext struct {
 type MIDs struct {
 	sync.Mutex
 	lastMid uint16
-	index   []*CPContext
+	index   []*CPContext // index of slice is (messageid - 1)
 }
 
 // Request is the library provided MIDService's implementation of
@@ -56,20 +56,26 @@ type MIDs struct {
 func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := uint16(0); i < midMax; i++ {
-		v := (m.lastMid + i) % midMax + 1
-		if m.index[v-1] != nil {
-			// In some case, additionally check if last MID is blank at last loop, because it may be already blank here.
-			// When last MID is 0, MIDs was just initialized and checking isn't required.
-			if !(m.lastMid != 0 && i == midMax - 1 && v != m.lastMid  && m.index[m.lastMid-1] == nil) {
-				continue
-			}
-			v++
+
+	// Scan from lastMid to end of range.
+	for i := m.lastMid; i < midMax; i++ {
+		if m.index[i] != nil {
+			continue
 		}
-		m.index[v-1] = c
-		m.lastMid = v
-		return v, nil
+		m.index[i] = c
+		m.lastMid = i + 1
+		return i + 1, nil
 	}
+	// Scan from start of range to lastMid
+	for i := uint16(0); i < m.lastMid; i++ {
+		if m.index[i] != nil {
+			continue
+		}
+		m.index[i] = c
+		m.lastMid = i + 1
+		return i + 1, nil
+	}
+
 	return 0, ErrorMidsExhausted
 }
 
