@@ -219,7 +219,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 	c.debug.Println("waiting for CONNACK/AUTH")
 	var (
-		caPacket    *packets.Connack
+		caPacket *packets.Connack
 		// We use buffered channels to prevent goroutine leak. The Details are below.
 		// - c.expectConnack waits to send data to caPacketCh or caPacketErr.
 		// - If connCtx is cancelled (done) before c.expectConnack finishes to send data to either "unbuffered" channel,

@@ -4,27 +4,27 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
 )
 
 // PingFailHandler is a type for the function that is invoked
-// when we have sent a Pingreq to the server and not received
-// a Pingresp within 1.5x our pingtimeout
+// when the sending of a PINGREQ failed or when we have sent
+// a PINGREQ to the server and not received a PINGRESP within
+// the appropriate amount of time.
 type PingFailHandler func(error)
 
 // Pinger is an interface of the functions for a struct that is
 // used to manage sending PingRequests and responding to
-// PingResponses
+// PingResponses.
 // Start() takes a net.Conn which is a connection over which an
 // MQTT session has already been established, and a time.Duration
 // of the keepalive setting passed to the server when the MQTT
 // session was established.
 // Stop() is used to stop the Pinger
 // PingResp() is the function that is called by the Client when
-// a PingResponse is received
+// a PINGRESP is received
 // SetDebug() is used to pass in a Logger to be used to log debug
 // information, for example sharing a logger with the main client
 type Pinger interface {
@@ -36,13 +36,11 @@ type Pinger interface {
 
 // PingHandler is the library provided default Pinger
 type PingHandler struct {
-	mu              sync.Mutex
-	lastPing        time.Time
-	conn            net.Conn
-	stop            chan struct{}
-	pingFailHandler PingFailHandler
-	pingOutstanding int32
-	debug           Logger
+	sync.Mutex
+	stop             chan struct{}
+	pingRespReceived chan struct{}
+	pingFailHandler  PingFailHandler
+	debug            Logger
 }
 
 // DefaultPingerWithCustomFailHandler returns an instance of the
@@ -59,33 +57,50 @@ func DefaultPingerWithCustomFailHandler(pfh PingFailHandler) *PingHandler {
 // Start is the library provided Pinger's implementation of
 // the required interface function()
 func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
-	p.mu.Lock()
-	p.conn = c
+	p.Lock()
+	if p.stop != nil {
+		select {
+		case <-p.stop:
+			// Stopped before, need to reset
+		default:
+			// Already running
+			p.Unlock()
+			return
+		}
+	}
 	p.stop = make(chan struct{})
-	p.mu.Unlock()
-	checkTicker := time.NewTicker(pt / 4)
+	p.pingRespReceived = make(chan struct{}, 1)
+	p.Unlock()
+
+	defer p.Stop()
+
+	checkTicker := time.NewTicker(pt)
 	defer checkTicker.Stop()
+
+	sendPingreq := func() error {
+		p.debug.Println("PingHandler sending ping request")
+		_, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(c)
+		return err
+	}
+	if err := sendPingreq(); err != nil {
+		p.pingFailHandler(err)
+		return
+	}
+
 	for {
 		select {
 		case <-p.stop:
 			return
 		case <-checkTicker.C:
-			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
-				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
-				//ping outstanding and not reset in 1.5 times ping timer
-				return
-			}
-			if time.Since(p.lastPing) >= pt {
-				//time to send a ping
-				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
-					if p.pingFailHandler != nil {
-						p.pingFailHandler(err)
-					}
+			select {
+			case <-p.pingRespReceived:
+				if err := sendPingreq(); err != nil {
+					p.pingFailHandler(err)
 					return
 				}
-				atomic.AddInt32(&p.pingOutstanding, 1)
-				p.lastPing = time.Now()
-				p.debug.Println("pingHandler sending ping request")
+			default:
+				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
+				return
 			}
 		}
 	}
@@ -94,16 +109,17 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 // Stop is the library provided Pinger's implementation of
 // the required interface function()
 func (p *PingHandler) Stop() {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.Lock()
+	defer p.Unlock()
 	if p.stop == nil {
 		return
 	}
-	p.debug.Println("pingHandler stopping")
+
 	select {
 	case <-p.stop:
 		//Already stopped, do nothing
 	default:
+		p.debug.Println("pingHandler stopping")
 		close(p.stop)
 	}
 }
@@ -111,12 +127,15 @@ func (p *PingHandler) Stop() {
 // PingResp is the library provided Pinger's implementation of
 // the required interface function()
 func (p *PingHandler) PingResp() {
-	p.debug.Println("pingHandler resetting pingOutstanding")
-	atomic.StoreInt32(&p.pingOutstanding, 0)
+	p.debug.Println("pingHandler received ping response")
+	select {
+	case p.pingRespReceived <- struct{}{}:
+	default:
+	}
 }
 
-// SetDebug sets the logger l to be used for printing debug
-// information for the pinger
+// SetDebug is the library provided Pinger's implementation of
+// the required interface function()
 func (p *PingHandler) SetDebug(l Logger) {
 	p.debug = l
 }
