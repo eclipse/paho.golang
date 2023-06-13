@@ -3,6 +3,7 @@ package paho
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -17,6 +18,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 )
+
+var fullTestLogs bool
+
+func TestMain(m *testing.M) {
+	flag.BoolVar(&fullTestLogs, "fullTestLogs", false, "enable printing of full logs during test")
+	flag.Parse()
+
+	os.Exit(m.Run())
+}
 
 func TestNewClient(t *testing.T) {
 	c := NewClient(ClientConfig{})
@@ -63,7 +73,10 @@ func TestClientConnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "CONNECT: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	cp := &Connect{
 		KeepAlive:  30,
@@ -101,7 +114,10 @@ func TestClientSubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
@@ -136,7 +152,10 @@ func TestClientUnsubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
@@ -166,7 +185,10 @@ func TestClientPublishQoS0(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS0: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -200,7 +222,10 @@ func TestClientPublishQoS1(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -239,7 +264,10 @@ func TestClientPublishQoS2(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -277,7 +305,10 @@ func TestClientReceiveQoS0(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS0: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -313,7 +344,10 @@ func TestClientReceiveQoS1(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS1: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -349,7 +383,10 @@ func TestClientReceiveQoS2(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS2: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -399,7 +436,10 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 	t.Cleanup(c.close)
 
 	ctx := context.Background()
@@ -479,7 +519,10 @@ func TestManualAcksInOrder(t *testing.T) {
 		require.NoError(t, c.Ack(p))
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 	t.Cleanup(c.close)
 
 	ctx := context.Background()
@@ -549,7 +592,10 @@ func TestReceiveServerDisconnect(t *testing.T) {
 		},
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "SERVERDISCONNECT: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -582,7 +628,10 @@ func TestAuthenticate(t *testing.T) {
 		AuthHandler: &fakeAuth{},
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATE: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
@@ -672,7 +721,10 @@ func TestAuthenticateOnConnect(t *testing.T) {
 		AuthHandler: &auther,
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATEONCONNECT: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	cp := &Connect{
 		KeepAlive:  30,
@@ -700,6 +752,10 @@ func TestCleanup(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // canceling to make the client fail on the connection attempt
@@ -733,6 +789,11 @@ func TestCleanup(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
+
 	ca, err = c.Connect(ctx, &Connect{
 		KeepAlive:  30,
 		ClientID:   "testClient",
@@ -764,7 +825,10 @@ func TestDisconnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 	t.Cleanup(c.close)
 
 	ctx := context.Background()
@@ -807,6 +871,10 @@ func TestCloseDeadlock(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+	}
 
 	ctx := context.Background()
 	ca, err := c.Connect(ctx, &Connect{
@@ -855,11 +923,9 @@ func TestSendOnClosedChannel(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-
-	if testing.Verbose() {
-		l := log.New(os.Stdout, t.Name(), log.LstdFlags)
-		c.SetDebugLogger(l)
-		c.SetErrorLogger(l)
+	if fullTestLogs {
+		c.SetDebugLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
+		c.SetErrorLogger(log.New(os.Stderr, t.Name(), log.LstdFlags))
 	}
 
 	ctx := context.Background()
