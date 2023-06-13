@@ -37,8 +37,8 @@ func NewHandler(ctx context.Context, opts HandlerOpts) (*Handler, error) {
 	opts.Router.RegisterHandler(h.responseTopic, h.responseHandler)
 
 	_, err := opts.Conn.Subscribe(ctx, &paho.Subscribe{
-		Subscriptions: map[string]paho.SubscribeOptions{
-			h.responseTopic: {QoS: 1},
+		Subscriptions: []paho.SubscribeOptions{
+			{Topic: h.responseTopic, QoS: 1},
 		},
 	})
 	if err != nil {

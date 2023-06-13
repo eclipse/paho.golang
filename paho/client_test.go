@@ -109,10 +109,10 @@ func TestClientSubscribe(t *testing.T) {
 	go c.PingHandler.Start(c.Conn, 30*time.Second)
 
 	s := &Subscribe{
-		Subscriptions: map[string]SubscribeOptions{
-			"test/1": {QoS: 1},
-			"test/2": {QoS: 2},
-			"test/3": {QoS: 0},
+		Subscriptions: []SubscribeOptions{
+			{Topic: "test/1", QoS: 1},
+			{Topic: "test/2", QoS: 2},
+			{Topic: "test/3", QoS: 0},
 		},
 	}
 

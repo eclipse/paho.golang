@@ -114,8 +114,8 @@ func getCmConfig(cfg config) autopaho.ClientConfig {
 			fmt.Println("mqtt connection up")
 			ctx, _ := context.WithTimeout(context.Background(), time.Duration(5*time.Second))
 			if _, err := cm.Subscribe(ctx, &paho.Subscribe{
-				Subscriptions: map[string]paho.SubscribeOptions{
-					cfg.topic: {QoS: cfg.qos},
+				Subscriptions: []paho.SubscribeOptions{
+					{Topic: cfg.topic, QoS: cfg.qos},
 				},
 			}); err != nil {
 				fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received.", err)

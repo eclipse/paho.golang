@@ -32,8 +32,8 @@ func main() {
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
-				Subscriptions: map[string]paho.SubscribeOptions{
-					cfg.topic: {QoS: cfg.qos},
+				Subscriptions: []paho.SubscribeOptions{
+					{Topic: cfg.topic, QoS: cfg.qos},
 				},
 			}); err != nil {
 				fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received.", err)

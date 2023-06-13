@@ -623,10 +623,10 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 // is returned from the function, along with any errors.
 func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 	if !c.serverProps.WildcardSubAvailable {
-		for t := range s.Subscriptions {
-			if strings.ContainsAny(t, "#+") {
+		for _, sub := range s.Subscriptions {
+			if strings.ContainsAny(sub.Topic, "#+") {
 				// Using a wildcard in a subscription when not supported
-				return nil, fmt.Errorf("cannot subscribe to %s, server does not support wildcards", t)
+				return nil, fmt.Errorf("cannot subscribe to %s, server does not support wildcards", sub.Topic)
 			}
 		}
 	}
@@ -634,9 +634,9 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		return nil, fmt.Errorf("cannot send subscribe with subID set, server does not support subID")
 	}
 	if !c.serverProps.SharedSubAvailable {
-		for t := range s.Subscriptions {
-			if strings.HasPrefix(t, "$share") {
-				return nil, fmt.Errorf("cannont subscribe to %s, server does not support shared subscriptions", t)
+		for _, sub := range s.Subscriptions {
+			if strings.HasPrefix(sub.Topic, "$share") {
+				return nil, fmt.Errorf("cannont subscribe to %s, server does not support shared subscriptions", sub.Topic)
 			}
 		}
 	}

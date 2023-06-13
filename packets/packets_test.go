@@ -218,10 +218,7 @@ func TestNewControlPacket(t *testing.T) {
 			args: SUBSCRIBE,
 			want: &ControlPacket{
 				FixedHeader: FixedHeader{Type: SUBSCRIBE, Flags: 2},
-				Content: &Subscribe{
-					Properties:    &Properties{},
-					Subscriptions: make(map[string]SubOptions),
-				},
+				Content:     &Subscribe{Properties: &Properties{}},
 			},
 		},
 		{

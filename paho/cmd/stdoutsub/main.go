@@ -78,8 +78,8 @@ func main() {
 	}()
 
 	sa, err := c.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: map[string]paho.SubscribeOptions{
-			*topic: {QoS: byte(*qos)},
+		Subscriptions: []paho.SubscribeOptions{
+			{Topic: *topic, QoS: byte(*qos)},
 		},
 	})
 	if err != nil {
