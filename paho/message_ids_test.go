@@ -3,11 +3,11 @@ package paho
 import (
 	"context"
 	"log"
+	"math"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
-	"math"
-	"math/rand"
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/stretchr/testify/assert"
@@ -79,7 +79,7 @@ func TestMidExhaustion(t *testing.T) {
 	assert.ErrorIs(t, err, ErrorMidsExhausted)
 }
 
-func TestUsingFullBandOfMID(t *testing.T){
+func TestUsingFullBandOfMID(t *testing.T) {
 	m := &MIDs{index: make([]*CPContext, midMax)}
 	cp := &CPContext{}
 
@@ -109,7 +109,7 @@ func TestUsingFullBandOfMID(t *testing.T){
 	for i := 0; i < 60000; i++ {
 		r := uint16(rand.Intn(math.MaxUint16 + 1))
 		if r == 0 {
-		  r += 1
+			r += 1
 		}
 		m.Free(r)
 		h[r] = true
@@ -119,6 +119,29 @@ func TestUsingFullBandOfMID(t *testing.T){
 		_, err := m.Request(cp)
 		assert.Nil(t, err)
 	}
+}
+
+func TestMidClaimID(t *testing.T) {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	cp := &CPContext{}
+
+	// Claim ID and then get the CPContext value back
+	err := m.ClaimID(42, cp)
+	assert.Nil(t, err)
+	assert.Equal(t, cp, m.Get(42))
+
+	// Free the ID, then claim it again
+	m.Free(42)
+	assert.Nil(t, m.Get(42))
+	err = m.ClaimID(42, cp)
+	assert.Nil(t, err)
+	assert.Equal(t, cp, m.Get(42))
+
+	// Claim an ID that is already in use
+	id, err := m.Request(cp)
+	assert.Nil(t, err)
+	err = m.ClaimID(id, cp)
+	assert.ErrorIs(t, err, ErrorMidInUse)
 }
 
 func BenchmarkRequestMID(b *testing.B) {

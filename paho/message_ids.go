@@ -17,10 +17,17 @@ const (
 // free message ids to be used.
 var ErrorMidsExhausted = errors.New("all message ids in use")
 
+// ErrorMidInUse is returned from ClaimID() when the requested
+// message id is already in use.
+var ErrorMidInUse = errors.New("message id already in use")
+
 // MIDService defines the interface for a struct that handles the
 // relationship between message ids and CPContexts
 // Request() takes a *CPContext and returns a uint16 that is the
 // messageid that should be used by the code that called Request()
+// ClaimID() takes a unit16 that is a messageid and its corresponding
+// *CPContext to mark that messageid as in use. This is used when
+// reconnecting with an existing session that has outstanding messages
 // Get() takes a uint16 that is a messageid and returns the matching
 // *CPContext that the MIDService has associated with that messageid
 // Free() takes a uint16 that is a messageid and instructs the MIDService
@@ -46,7 +53,7 @@ type CPContext struct {
 // It uses a slice of *CPContext to track responses
 // to messages with a messageid tracking the last used message id
 type MIDs struct {
-	sync.Mutex
+	sync.RWMutex
 	lastMid uint16
 	index   []*CPContext // index of slice is (messageid - 1)
 }
@@ -79,11 +86,26 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	return 0, ErrorMidsExhausted
 }
 
+// ClaimID is the library provided MIDService's implementation of
+// the required interface function()
+func (m *MIDs) ClaimID(i uint16, c *CPContext) error {
+	m.Lock()
+	defer m.Unlock()
+	if m.index[i-1] != nil {
+		return ErrorMidInUse
+	}
+	m.index[i-1] = c
+	if i > m.lastMid {
+		m.lastMid = i
+	}
+	return nil
+}
+
 // Get is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Get(i uint16) *CPContext {
-	m.Lock()
-	defer m.Unlock()
+	m.RLock()
+	defer m.RUnlock()
 	return m.index[i-1]
 }
 
