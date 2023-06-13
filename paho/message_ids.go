@@ -48,7 +48,7 @@ type CPContext struct {
 type MIDs struct {
 	sync.Mutex
 	lastMid uint16
-	index   []*CPContext
+	index   []*CPContext // index of slice is (messageid - 1)
 }
 
 // Request is the library provided MIDService's implementation of
@@ -56,17 +56,26 @@ type MIDs struct {
 func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	m.Lock()
 	defer m.Unlock()
-	for i := uint16(1); i < midMax; i++ {
-		v := (m.lastMid + i) % midMax
-		if v == 0 {
+
+	// Scan from lastMid to end of range.
+	for i := m.lastMid; i < midMax; i++ {
+		if m.index[i] != nil {
 			continue
 		}
-		if inuse := m.index[v]; inuse == nil {
-			m.index[v] = c
-			m.lastMid = v
-			return v, nil
-		}
+		m.index[i] = c
+		m.lastMid = i + 1
+		return i + 1, nil
 	}
+	// Scan from start of range to lastMid
+	for i := uint16(0); i < m.lastMid; i++ {
+		if m.index[i] != nil {
+			continue
+		}
+		m.index[i] = c
+		m.lastMid = i + 1
+		return i + 1, nil
+	}
+
 	return 0, ErrorMidsExhausted
 }
 
@@ -75,14 +84,14 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 func (m *MIDs) Get(i uint16) *CPContext {
 	m.Lock()
 	defer m.Unlock()
-	return m.index[i]
+	return m.index[i-1]
 }
 
 // Free is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Free(i uint16) {
 	m.Lock()
-	m.index[i] = nil
+	m.index[i-1] = nil
 	m.Unlock()
 }
 
