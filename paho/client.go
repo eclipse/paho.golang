@@ -40,6 +40,7 @@ type (
 		// wrapper or extend the custom net.Conn struct with sync.Locker.
 		Conn          net.Conn
 		MIDs          MIDService
+		OrphanedOps   OrphanedOps
 		AuthHandler   Auther
 		PingHandler   Pinger
 		Router        Router
@@ -65,6 +66,16 @@ type (
 		// SendAcksInterval is used only when EnableManualAcknowledgment is true
 		// it determines how often the client tries to send a batch of acknowledgments in the right order to the server.
 		SendAcksInterval time.Duration
+		// OrphanedPublishCallback is the callback to be called with the result of orphaned PUBLISH operations.
+		// A PUBLISH operation can be orphaned if the Publish() method times out based on the PacketTimeout value
+		// or if a PUBLISH is being redelievered after a reconnect (not yet implemented)
+		OrphanedPublishCallback func(*PublishResponse)
+		// OrphanedSubscribeCallback is the callback to be called with the result of orphaned SUBSCRIBE operations.
+		// A SUBSCRIBE operation can be orphaned if the Subscribe() method times out based on the PacketTimeout value.
+		OrphanedSubscribeCallback func(*Suback)
+		// OrphanedUnsubscribeCallback is the callback to be called with the result of orphaned UBSUBSCRIBE operations.
+		// An UNSUBSCRIBE operation can be orphaned if the Unsubscribe() method times out based on the PacketTimeout value.
+		OrphanedUnsubscribeCallback func(*Unsuback)
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -139,6 +150,13 @@ func NewClient(conf ClientConfig) *Client {
 	}
 	if c.MIDs == nil {
 		c.MIDs = &MIDs{index: make([]*CPContext, int(midMax))}
+	}
+	if c.OrphanedOps == nil {
+		c.OrphanedOps = NewStandardOrphanedOps(OrphanedOperationPoolCallbacks{
+			PublishCallback:     c.OrphanedPublishCallback,
+			SubscribeCallback:   c.OrphanedSubscribeCallback,
+			UnsubscribeCallback: c.OrphanedUnsubscribeCallback,
+		})
 	}
 	if c.PacketTimeout == 0 {
 		c.PacketTimeout = 10 * time.Second
@@ -219,7 +237,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 
 	c.debug.Println("waiting for CONNACK/AUTH")
 	var (
-		caPacket    *packets.Connack
+		caPacket *packets.Connack
 		// We use buffered channels to prevent goroutine leak. The Details are below.
 		// - c.expectConnack waits to send data to caPacketCh or caPacketErr.
 		// - If connCtx is cancelled (done) before c.expectConnack finishes to send data to either "unbuffered" channel,
@@ -455,41 +473,32 @@ func (c *Client) incoming() {
 					c.mu.Unlock()
 				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK:
-				c.debug.Printf("received %s packet with id %d", recv.PacketType(), recv.PacketID())
-				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx != nil {
-					cpCtx.Return <- *recv
-				} else {
-					c.debug.Println("received a response for a message ID we don't know:", recv.PacketID())
+				id := recv.PacketID()
+				cpCtx := c.MIDs.Get(id)
+				if cpCtx == nil {
+					reasonString := fmt.Sprintf("received %s for unknown packet ID %d", recv.PacketType(), id)
+					c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
+					go c.Disconnect(&Disconnect{
+						ReasonCode: packets.DisconnectProtocolError,
+						Properties: &DisconnectProperties{ReasonString: reasonString},
+					})
+					return
 				}
+				c.debug.Printf("received %s for %d", recv.PacketType(), id)
+				cpCtx.Return <- *recv
 			case packets.PUBREC:
-				c.debug.Println("received PUBREC for", recv.PacketID())
-				if cpCtx := c.MIDs.Get(recv.PacketID()); cpCtx == nil {
-					c.debug.Println("received a PUBREC for a message ID we don't know:", recv.PacketID())
-					pl := packets.Pubrel{
-						PacketID:   recv.Content.(*packets.Pubrec).PacketID,
-						ReasonCode: 0x92,
+				id := recv.PacketID()
+				cpCtx := c.MIDs.Get(id)
+				if cpCtx == nil {
+					c.errors.Printf("received PUBREC for unknown packet ID %d, sending PUBREL with reason code 0x92", id)
+					pl := packets.Pubrel{PacketID: id, ReasonCode: 0x92}
+					if _, err := pl.WriteTo(c.Conn); err != nil {
+						c.errors.Printf("failed to send PUBREL for %d: %w", id, err)
 					}
-					c.debug.Println("sending PUBREL for", pl.PacketID)
-					_, err := pl.WriteTo(c.Conn)
-					if err != nil {
-						c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
-					}
-				} else {
-					pr := recv.Content.(*packets.Pubrec)
-					if pr.ReasonCode >= 0x80 {
-						//Received a failure code, shortcut and return
-						cpCtx.Return <- *recv
-					} else {
-						pl := packets.Pubrel{
-							PacketID: pr.PacketID,
-						}
-						c.debug.Println("sending PUBREL for", pl.PacketID)
-						_, err := pl.WriteTo(c.Conn)
-						if err != nil {
-							c.errors.Printf("failed to send PUBREL for %d: %s", pl.PacketID, err)
-						}
-					}
+					continue
 				}
+				c.debug.Printf("received PUBREC for %d", id)
+				cpCtx.Return <- *recv
 			case packets.PUBREL:
 				c.debug.Println("received PUBREL for", recv.PacketID())
 				//Auto respond to pubrels unless failure code
@@ -543,6 +552,8 @@ func (c *Client) close() {
 	close(c.publishPackets)
 
 	c.debug.Println("client stopped")
+	c.OrphanedOps.Stop()
+	c.debug.Println("orphaned ops stopped")
 	c.PingHandler.Stop()
 	c.debug.Println("ping stopped")
 	_ = c.Conn.Close()
@@ -622,6 +633,9 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 // a response Suback, or for the timeout to fire. Any response Suback
 // is returned from the function, along with any errors.
 func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
+	subCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
+	defer cf()
+
 	if !c.serverProps.WildcardSubAvailable {
 		for _, sub := range s.Subscriptions {
 			if strings.ContainsAny(sub.Topic, "#+") {
@@ -641,63 +655,64 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		}
 	}
 
-	c.debug.Printf("subscribing to %+v", s.Subscriptions)
-
-	subCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
-	defer cf()
-	cpCtx := &CPContext{subCtx, make(chan packets.ControlPacket, 1)}
+	respInternal := make(chan packets.ControlPacket)
+	resp := make(chan packets.ControlPacket, 1)
 
 	sp := s.Packet()
 
-	mid, err := c.MIDs.Request(cpCtx)
+	var err error
+	sp.PacketID, err = c.MIDs.Request(&CPContext{context.TODO(), respInternal})
 	if err != nil {
 		return nil, err
 	}
-	defer c.MIDs.Free(mid)
-	sp.PacketID = mid
 
-	c.debug.Println("sending SUBSCRIBE")
-	if _, err := sp.WriteTo(c.Conn); err != nil {
-		return nil, err
-	}
-	c.debug.Println("waiting for SUBACK")
-	var sap packets.ControlPacket
+	c.debug.Printf("subscribing to %+v", s.Subscriptions)
+
+	c.workers.Add(1)
+	go func() {
+		defer c.MIDs.Free(sp.PacketID)
+		defer c.workers.Done()
+		defer close(resp)
+
+		c.debug.Println("sending SUBSCRIBE for %d", sp.PacketID)
+		if _, err := sp.WriteTo(c.Conn); err != nil {
+			c.errors.Printf("failed to send SUBSCRIBE for %d: %w", sp.PacketID, err)
+			return
+		}
+
+		var receivedPacket packets.ControlPacket
+
+		select {
+		case <-c.stop:
+			c.errors.Printf("SUBSCRIBE operation for %d stopping due to client stop channel", sp.PacketID)
+			return
+		case receivedPacket = <-respInternal:
+		}
+
+		if receivedPacket.Type != packets.SUBACK {
+			reasonString := fmt.Sprintf(
+				"expected SUBACK for %d, got %s",
+				sp.PacketID,
+				receivedPacket.PacketType(),
+			)
+			c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
+			go c.Disconnect(&Disconnect{
+				ReasonCode: packets.DisconnectProtocolError,
+				Properties: &DisconnectProperties{ReasonString: reasonString},
+			})
+			return
+		}
+		resp <- receivedPacket
+	}()
 
 	select {
 	case <-subCtx.Done():
-		if ctxErr := subCtx.Err(); ctxErr != nil {
-			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
-			return nil, ctxErr
-		}
-	case sap = <-cpCtx.Return:
+		c.debug.Printf("adding SUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", sp.PacketID, subCtx.Err())
+		c.OrphanedOps.AddOp(resp)
+		return nil, subCtx.Err()
+	case r := <-resp:
+		return SubackFromPacketSuback(r.Content.(*packets.Suback)), nil
 	}
-
-	if sap.Type != packets.SUBACK {
-		return nil, fmt.Errorf("received %d instead of Suback", sap.Type)
-	}
-	c.debug.Println("received SUBACK")
-
-	sa := SubackFromPacketSuback(sap.Content.(*packets.Suback))
-	switch {
-	case len(sa.Reasons) == 1:
-		if sa.Reasons[0] >= 0x80 {
-			var reason string
-			c.debug.Println("received an error code in Suback:", sa.Reasons[0])
-			if sa.Properties != nil {
-				reason = sa.Properties.ReasonString
-			}
-			return sa, fmt.Errorf("failed to subscribe to topic: %s", reason)
-		}
-	default:
-		for _, code := range sa.Reasons {
-			if code >= 0x80 {
-				c.debug.Println("received an error code in Suback:", code)
-				return sa, fmt.Errorf("at least one requested subscription failed")
-			}
-		}
-	}
-
-	return sa, nil
 }
 
 // Unsubscribe is used to send an Unsubscribe request to the MQTT server.
@@ -705,62 +720,65 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 // a response Unsuback, or for the timeout to fire. Any response Unsuback
 // is returned from the function, along with any errors.
 func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, error) {
-	c.debug.Printf("unsubscribing from %+v", u.Topics)
 	unsubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
 	defer cf()
-	cpCtx := &CPContext{unsubCtx, make(chan packets.ControlPacket, 1)}
+
+	respInternal := make(chan packets.ControlPacket)
+	resp := make(chan packets.ControlPacket, 1)
 
 	up := u.Packet()
 
-	mid, err := c.MIDs.Request(cpCtx)
+	var err error
+	up.PacketID, err = c.MIDs.Request(&CPContext{context.TODO(), respInternal})
 	if err != nil {
 		return nil, err
 	}
-	defer c.MIDs.Free(mid)
-	up.PacketID = mid
 
-	c.debug.Println("sending UNSUBSCRIBE")
-	if _, err := up.WriteTo(c.Conn); err != nil {
-		return nil, err
-	}
-	c.debug.Println("waiting for UNSUBACK")
-	var uap packets.ControlPacket
+	c.workers.Add(1)
+	go func() {
+		defer c.MIDs.Free(up.PacketID)
+		defer c.workers.Done()
+		defer close(resp)
+
+		c.debug.Printf("sending UNSUBSCRIBE for %d", up.PacketID)
+		if _, err := up.WriteTo(c.Conn); err != nil {
+			c.errors.Printf("failed to send UNSUBSCRIBE for %d: %w", up.PacketID, err)
+			return
+		}
+
+		var receivedPacket packets.ControlPacket
+
+		select {
+		case <-c.stop:
+			c.errors.Printf("UNSUBSCRIBE operation for %d stopping due to client stop channel", up.PacketID)
+			return
+		case receivedPacket = <-respInternal:
+		}
+
+		if receivedPacket.Type != packets.UNSUBACK {
+			reasonString := fmt.Sprintf(
+				"expected UNSUBACK for %d, got %s",
+				up.PacketID,
+				receivedPacket.PacketType(),
+			)
+			c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
+			go c.Disconnect(&Disconnect{
+				ReasonCode: packets.DisconnectProtocolError,
+				Properties: &DisconnectProperties{ReasonString: reasonString},
+			})
+			return
+		}
+		resp <- receivedPacket
+	}()
 
 	select {
 	case <-unsubCtx.Done():
-		if ctxErr := unsubCtx.Err(); ctxErr != nil {
-			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
-			return nil, ctxErr
-		}
-	case uap = <-cpCtx.Return:
+		c.debug.Printf("adding UNSUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", up.PacketID, unsubCtx.Err())
+		c.OrphanedOps.AddOp(resp)
+		return nil, unsubCtx.Err()
+	case r := <-resp:
+		return UnsubackFromPacketUnsuback(r.Content.(*packets.Unsuback)), nil
 	}
-
-	if uap.Type != packets.UNSUBACK {
-		return nil, fmt.Errorf("received %d instead of Unsuback", uap.Type)
-	}
-	c.debug.Println("received SUBACK")
-
-	ua := UnsubackFromPacketUnsuback(uap.Content.(*packets.Unsuback))
-	switch {
-	case len(ua.Reasons) == 1:
-		if ua.Reasons[0] >= 0x80 {
-			var reason string
-			c.debug.Println("received an error code in Unsuback:", ua.Reasons[0])
-			if ua.Properties != nil {
-				reason = ua.Properties.ReasonString
-			}
-			return ua, fmt.Errorf("failed to unsubscribe from topic: %s", reason)
-		}
-	default:
-		for _, code := range ua.Reasons {
-			if code >= 0x80 {
-				c.debug.Println("received an error code in Suback:", code)
-				return ua, fmt.Errorf("at least one requested unsubscribe failed")
-			}
-		}
-	}
-
-	return ua, nil
 }
 
 // Publish is used to send a publication to the MQTT server.
@@ -768,6 +786,9 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 // the appropriate response, or for the timeout to fire.
 // Any response message is returned from the function, along with any errors.
 func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, error) {
+	pubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
+	defer cf()
+
 	if p.QoS > c.serverProps.MaximumQoS {
 		return nil, fmt.Errorf("cannot send Publish with QoS %d, server maximum QoS is %d", p.QoS, c.serverProps.MaximumQoS)
 	}
@@ -791,79 +812,154 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 
 	pb := p.Packet()
 
-	switch p.QoS {
-	case 0:
+	if p.QoS == 0 {
 		c.debug.Println("sending QoS0 message")
-		if _, err := pb.WriteTo(c.Conn); err != nil {
-			return nil, err
-		}
-		return nil, nil
-	case 1, 2:
-		return c.publishQoS12(ctx, pb)
-	}
-
-	return nil, fmt.Errorf("QoS isn't 0, 1 or 2")
-}
-
-func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish) (*PublishResponse, error) {
-	c.debug.Println("sending QoS12 message")
-	pubCtx, cf := context.WithTimeout(ctx, c.PacketTimeout)
-	defer cf()
-	if err := c.serverInflight.Acquire(pubCtx, 1); err != nil {
+		_, err := pb.WriteTo(c.Conn)
 		return nil, err
 	}
-	defer c.serverInflight.Release(1)
-	cpCtx := &CPContext{pubCtx, make(chan packets.ControlPacket, 1)}
+	if p.QoS != 1 && p.QoS != 2 {
+		return nil, fmt.Errorf("QoS isn't 0, 1 or 2")
+	}
 
-	mid, err := c.MIDs.Request(cpCtx)
+	resp, err := c.publishQoS12(pb)
 	if err != nil {
 		return nil, err
 	}
-	defer c.MIDs.Free(mid)
-	pb.PacketID = mid
-
-	if _, err := pb.WriteTo(c.Conn); err != nil {
-		return nil, err
-	}
-	var resp packets.ControlPacket
 
 	select {
 	case <-pubCtx.Done():
-		if ctxErr := pubCtx.Err(); ctxErr != nil {
-			c.debug.Println(fmt.Sprintf("terminated due to context: %v", ctxErr))
-			return nil, ctxErr
-		}
-	case resp = <-cpCtx.Return:
-	}
-
-	switch pb.QoS {
-	case 1:
-		if resp.Type != packets.PUBACK {
-			return nil, fmt.Errorf("received %d instead of PUBACK", resp.Type)
-		}
-
-		pr := PublishResponseFromPuback(resp.Content.(*packets.Puback))
-		if pr.ReasonCode >= 0x80 {
-			c.debug.Println("received an error code in Puback:", pr.ReasonCode)
-			return pr, fmt.Errorf("error publishing: %s", resp.Content.(*packets.Puback).Reason())
-		}
-		return pr, nil
-	case 2:
-		switch resp.Type {
-		case packets.PUBCOMP:
-			pr := PublishResponseFromPubcomp(resp.Content.(*packets.Pubcomp))
-			return pr, nil
+		c.OrphanedOps.AddOp(resp)
+		return nil, pubCtx.Err()
+	case r := <-resp:
+		switch r.Type {
+		case packets.PUBACK:
+			return PublishResponseFromPuback(r.Content.(*packets.Puback)), nil
 		case packets.PUBREC:
-			c.debug.Printf("received PUBREC for %s (must have errored)", pb.PacketID)
-			pr := PublishResponseFromPubrec(resp.Content.(*packets.Pubrec))
-			return pr, nil
+			return PublishResponseFromPubrec(r.Content.(*packets.Pubrec)), nil
+		case packets.PUBCOMP:
+			return PublishResponseFromPubcomp(r.Content.(*packets.Pubcomp)), nil
 		default:
-			return nil, fmt.Errorf("received %d instead of PUBCOMP", resp.Type)
+			return nil, fmt.Errorf("unexpected response packet type %d", r.Type)
 		}
 	}
+}
 
-	c.debug.Println("ended up with a non QoS1/2 message:", pb.QoS)
-	return nil, fmt.Errorf("ended up with a non QoS1/2 message: %d", pb.QoS)
+func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket, error) {
+	c.debug.Println("sending QoS 1 or 2 message")
+	resp := make(chan packets.ControlPacket, 1)
+
+	respInternal := make(chan packets.ControlPacket)
+
+	var err error
+	if pb.PacketID == 0 {
+		pb.PacketID, err = c.MIDs.Request(&CPContext{context.TODO(), respInternal})
+	} else {
+		// ClaimID() is not yet implemented
+		err = fmt.Errorf("publishing with a specific PacketID is not yet implemented")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	c.workers.Add(1)
+	go func() {
+		defer c.MIDs.Free(pb.PacketID)
+		defer c.workers.Done()
+		defer close(resp)
+
+		if err := c.serverInflight.Acquire(context.Background(), 1); err != nil {
+			go c.error(fmt.Errorf("unexpected failure aquiring inflight semaphore: %w", err))
+			return
+		}
+		defer c.serverInflight.Release(1)
+
+		if _, err := pb.WriteTo(c.Conn); err != nil {
+			c.errors.Printf("failed to send PUBLISH for %d: %w", pb.PacketID, err)
+			return
+		}
+
+		var receivedPacket packets.ControlPacket
+
+		select {
+		case <-c.stop:
+			c.errors.Printf("PUBLISH operation for %d stopping due to client stop channel", pb.PacketID)
+			return
+		case receivedPacket = <-respInternal:
+		}
+
+		switch pb.QoS {
+		case 1:
+			if receivedPacket.Type != packets.PUBACK {
+				reasonString := fmt.Sprintf(
+					"expected PUBACK for %d, got %s",
+					pb.PacketID,
+					receivedPacket.PacketType(),
+				)
+				c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
+				go c.Disconnect(&Disconnect{
+					ReasonCode: packets.DisconnectProtocolError,
+					Properties: &DisconnectProperties{ReasonString: reasonString},
+				})
+				return
+			}
+			resp <- receivedPacket
+			return
+		case 2:
+			if receivedPacket.Type != packets.PUBREC {
+				reasonString := fmt.Sprintf(
+					"expected PUBREC for %d, got %s",
+					pb.PacketID,
+					receivedPacket.PacketType(),
+				)
+				c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
+				go c.Disconnect(&Disconnect{
+					ReasonCode: packets.DisconnectProtocolError,
+					Properties: &DisconnectProperties{ReasonString: reasonString},
+				})
+				return
+			}
+		}
+
+		receivedPubrec := receivedPacket.Content.(*packets.Pubrec)
+		if receivedPubrec.ReasonCode >= 0x80 {
+			resp <- receivedPacket
+			return
+		}
+
+		pl := packets.Pubrel{
+			PacketID: pb.PacketID,
+		}
+		if _, err := pl.WriteTo(c.Conn); err != nil {
+			c.errors.Printf("failed to send PUBREL for %d: %w", pb.PacketID, err)
+			return
+		}
+
+		select {
+		case <-c.stop:
+			c.errors.Printf("PUBLISH operation for %d stopping due to client stop channel", pb.PacketID)
+			return
+		case receivedPacket = <-respInternal:
+		}
+
+		if receivedPacket.Type != packets.PUBCOMP {
+			dp := Disconnect{
+				ReasonCode: packets.DisconnectProtocolError,
+				Properties: &DisconnectProperties{
+					ReasonString: fmt.Sprintf(
+						"expected PUBCOMP for %d, got %s",
+						pb.PacketID,
+						receivedPacket.PacketType(),
+					),
+				},
+			}
+			go c.Disconnect(&dp)
+			return
+		}
+
+		resp <- receivedPacket
+	}()
+
+	return resp, nil
 }
 
 func (c *Client) expectConnack(packet chan<- *packets.Connack, errs chan<- error) {
