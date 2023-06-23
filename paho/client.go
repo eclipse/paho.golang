@@ -710,7 +710,10 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		c.debug.Printf("adding SUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", sp.PacketID, subCtx.Err())
 		c.OrphanedOps.AddOp(resp)
 		return nil, subCtx.Err()
-	case r := <-resp:
+	case r, ok := <-resp:
+		if !ok {
+			return nil, fmt.Errorf("SUBSCRIBE response channel closed")
+		}
 		return SubackFromPacketSuback(r.Content.(*packets.Suback)), nil
 	}
 }
@@ -776,7 +779,10 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 		c.debug.Printf("adding UNSUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", up.PacketID, unsubCtx.Err())
 		c.OrphanedOps.AddOp(resp)
 		return nil, unsubCtx.Err()
-	case r := <-resp:
+	case r, ok := <-resp:
+		if !ok {
+			return nil, fmt.Errorf("UNSUBSCRIBE response channel closed")
+		}
 		return UnsubackFromPacketUnsuback(r.Content.(*packets.Unsuback)), nil
 	}
 }
@@ -830,7 +836,10 @@ func (c *Client) Publish(ctx context.Context, p *Publish) (*PublishResponse, err
 	case <-pubCtx.Done():
 		c.OrphanedOps.AddOp(resp)
 		return nil, pubCtx.Err()
-	case r := <-resp:
+	case r, ok := <-resp:
+		if !ok {
+			return nil, fmt.Errorf("PUBLISH response channel closed")
+		}
 		switch r.Type {
 		case packets.PUBACK:
 			return PublishResponseFromPuback(r.Content.(*packets.Puback)), nil
