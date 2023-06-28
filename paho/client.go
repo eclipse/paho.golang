@@ -73,7 +73,7 @@ type (
 		// OrphanedSubscribeCallback is the callback to be called with the result of orphaned SUBSCRIBE operations.
 		// A SUBSCRIBE operation can be orphaned if the Subscribe() method times out based on the PacketTimeout value.
 		OrphanedSubscribeCallback func(*Suback)
-		// OrphanedUnsubscribeCallback is the callback to be called with the result of orphaned UBSUBSCRIBE operations.
+		// OrphanedUnsubscribeCallback is the callback to be called with the result of orphaned UNSUBSCRIBE operations.
 		// An UNSUBSCRIBE operation can be orphaned if the Unsubscribe() method times out based on the PacketTimeout value.
 		OrphanedUnsubscribeCallback func(*Unsuback)
 	}
@@ -477,11 +477,13 @@ func (c *Client) incoming() {
 				cpCtx := c.MIDs.Get(id)
 				if cpCtx == nil {
 					reasonString := fmt.Sprintf("received %s for unknown packet ID %d", recv.PacketType(), id)
-					c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
-					go c.Disconnect(&Disconnect{
-						ReasonCode: packets.DisconnectProtocolError,
-						Properties: &DisconnectProperties{ReasonString: reasonString},
-					})
+					go c.clientDisconnect(
+						&Disconnect{
+							ReasonCode: packets.DisconnectProtocolError,
+							Properties: &DisconnectProperties{ReasonString: reasonString},
+						},
+						fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+					)
 					return
 				}
 				c.debug.Printf("received %s for %d", recv.PacketType(), id)
@@ -493,7 +495,7 @@ func (c *Client) incoming() {
 					c.errors.Printf("received PUBREC for unknown packet ID %d, sending PUBREL with reason code 0x92", id)
 					pl := packets.Pubrel{PacketID: id, ReasonCode: 0x92}
 					if _, err := pl.WriteTo(c.Conn); err != nil {
-						c.errors.Printf("failed to send PUBREL for %d: %w", id, err)
+						c.errors.Printf("failed to send PUBREL for %d: %v", id, err)
 					}
 					continue
 				}
@@ -568,6 +570,15 @@ func (c *Client) close() {
 // It also closes the client network connection.
 func (c *Client) error(e error) {
 	c.debug.Println("error called:", e)
+	c.close()
+	c.workers.Wait()
+	go c.OnClientError(e)
+}
+
+func (c *Client) clientDisconnect(d *Disconnect, e error) {
+	c.errors.Printf("client initiating disconnect: %v", e)
+	d.Packet().WriteTo(c.Conn)
+
 	c.close()
 	c.workers.Wait()
 	go c.OnClientError(e)
@@ -676,7 +687,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 		c.debug.Println("sending SUBSCRIBE for %d", sp.PacketID)
 		if _, err := sp.WriteTo(c.Conn); err != nil {
-			c.errors.Printf("failed to send SUBSCRIBE for %d: %w", sp.PacketID, err)
+			c.errors.Printf("failed to send SUBSCRIBE for %d: %v", sp.PacketID, err)
 			return
 		}
 
@@ -695,11 +706,13 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 				sp.PacketID,
 				receivedPacket.PacketType(),
 			)
-			c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
-			go c.Disconnect(&Disconnect{
-				ReasonCode: packets.DisconnectProtocolError,
-				Properties: &DisconnectProperties{ReasonString: reasonString},
-			})
+			go c.clientDisconnect(
+				&Disconnect{
+					ReasonCode: packets.DisconnectProtocolError,
+					Properties: &DisconnectProperties{ReasonString: reasonString},
+				},
+				fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+			)
 			return
 		}
 		resp <- receivedPacket
@@ -707,7 +720,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 
 	select {
 	case <-subCtx.Done():
-		c.debug.Printf("adding SUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", sp.PacketID, subCtx.Err())
+		c.debug.Printf("adding SUBSCRIBE for %d to OrphanedOps due to context cancellation: %v", sp.PacketID, subCtx.Err())
 		c.OrphanedOps.AddOp(resp)
 		return nil, subCtx.Err()
 	case r, ok := <-resp:
@@ -745,7 +758,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 		c.debug.Printf("sending UNSUBSCRIBE for %d", up.PacketID)
 		if _, err := up.WriteTo(c.Conn); err != nil {
-			c.errors.Printf("failed to send UNSUBSCRIBE for %d: %w", up.PacketID, err)
+			c.errors.Printf("failed to send UNSUBSCRIBE for %d: %v", up.PacketID, err)
 			return
 		}
 
@@ -764,11 +777,13 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 				up.PacketID,
 				receivedPacket.PacketType(),
 			)
-			c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
-			go c.Disconnect(&Disconnect{
-				ReasonCode: packets.DisconnectProtocolError,
-				Properties: &DisconnectProperties{ReasonString: reasonString},
-			})
+			go c.clientDisconnect(
+				&Disconnect{
+					ReasonCode: packets.DisconnectProtocolError,
+					Properties: &DisconnectProperties{ReasonString: reasonString},
+				},
+				fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+			)
 			return
 		}
 		resp <- receivedPacket
@@ -776,7 +791,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 	select {
 	case <-unsubCtx.Done():
-		c.debug.Printf("adding UNSUBSCRIBE for %d to OrphanedOps due to context cancellation: %w", up.PacketID, unsubCtx.Err())
+		c.debug.Printf("adding UNSUBSCRIBE for %d to OrphanedOps due to context cancellation: %v", up.PacketID, unsubCtx.Err())
 		c.OrphanedOps.AddOp(resp)
 		return nil, unsubCtx.Err()
 	case r, ok := <-resp:
@@ -883,7 +898,7 @@ func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket
 		defer c.serverInflight.Release(1)
 
 		if _, err := pb.WriteTo(c.Conn); err != nil {
-			c.errors.Printf("failed to send PUBLISH for %d: %w", pb.PacketID, err)
+			c.errors.Printf("failed to send PUBLISH for %d: %v", pb.PacketID, err)
 			return
 		}
 
@@ -904,11 +919,13 @@ func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket
 					pb.PacketID,
 					receivedPacket.PacketType(),
 				)
-				c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
-				go c.Disconnect(&Disconnect{
-					ReasonCode: packets.DisconnectProtocolError,
-					Properties: &DisconnectProperties{ReasonString: reasonString},
-				})
+				go c.clientDisconnect(
+					&Disconnect{
+						ReasonCode: packets.DisconnectProtocolError,
+						Properties: &DisconnectProperties{ReasonString: reasonString},
+					},
+					fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+				)
 				return
 			}
 			resp <- receivedPacket
@@ -920,11 +937,13 @@ func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket
 					pb.PacketID,
 					receivedPacket.PacketType(),
 				)
-				c.errors.Printf("disconnecting due to server protocol error. %s", reasonString)
-				go c.Disconnect(&Disconnect{
-					ReasonCode: packets.DisconnectProtocolError,
-					Properties: &DisconnectProperties{ReasonString: reasonString},
-				})
+				go c.clientDisconnect(
+					&Disconnect{
+						ReasonCode: packets.DisconnectProtocolError,
+						Properties: &DisconnectProperties{ReasonString: reasonString},
+					},
+					fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+				)
 				return
 			}
 		}
@@ -939,7 +958,7 @@ func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket
 			PacketID: pb.PacketID,
 		}
 		if _, err := pl.WriteTo(c.Conn); err != nil {
-			c.errors.Printf("failed to send PUBREL for %d: %w", pb.PacketID, err)
+			c.errors.Printf("failed to send PUBREL for %d: %v", pb.PacketID, err)
 			return
 		}
 
@@ -951,17 +970,18 @@ func (c *Client) publishQoS12(pb *packets.Publish) (<-chan packets.ControlPacket
 		}
 
 		if receivedPacket.Type != packets.PUBCOMP {
-			dp := Disconnect{
-				ReasonCode: packets.DisconnectProtocolError,
-				Properties: &DisconnectProperties{
-					ReasonString: fmt.Sprintf(
-						"expected PUBCOMP for %d, got %s",
-						pb.PacketID,
-						receivedPacket.PacketType(),
-					),
+			reasonString := fmt.Sprintf(
+				"expected PUBCOMP for %d, got %s",
+				pb.PacketID,
+				receivedPacket.PacketType(),
+			)
+			go c.clientDisconnect(
+				&Disconnect{
+					ReasonCode: packets.DisconnectProtocolError,
+					Properties: &DisconnectProperties{ReasonString: reasonString},
 				},
-			}
-			go c.Disconnect(&dp)
+				fmt.Errorf("disconnecting due to server protocol error. %s", reasonString),
+			)
 			return
 		}
 
