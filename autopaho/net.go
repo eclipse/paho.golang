@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
+
+	"golang.org/x/net/proxy"
 )
 
 // Network (establishing connection) functionality for AutoPaho
@@ -78,17 +81,41 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 
 // attemptTCPConnection - makes a single attempt at establishing a TCP connection with the broker
 func attemptTCPConnection(ctx context.Context, address string) (net.Conn, error) {
-	var d net.Dialer
-	return d.DialContext(ctx, "tcp", address)
+	allProxy := os.Getenv("all_proxy")
+	if len(allProxy) == 0 {
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", address)
+	}
+	proxyDialer := proxy.FromEnvironment()
+	return proxyDialer.Dial("tcp", address)
 }
 
 // attemptTLSConnection - makes a single attempt at establishing a TLS connection with the broker
 func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address string) (net.Conn, error) {
-	d := tls.Dialer{
-		Config: tlsCfg,
+	allProxy := os.Getenv("all_proxy")
+	if len(allProxy) == 0 {
+		d := tls.Dialer{
+			Config: tlsCfg,
+		}
+		conn, err := d.DialContext(ctx, "tcp", address)
+		return packets.NewThreadSafeConn(conn), err
 	}
-	conn, err := d.DialContext(ctx, "tcp", address)
-	return packets.NewThreadSafeConn(conn), err
+
+	proxyDialer := proxy.FromEnvironment()
+	conn, err := proxyDialer.Dial("tcp", address)
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConn := tls.Client(conn, tlsCfg)
+
+	err = tlsConn.Handshake()
+	if err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+
+	return packets.NewThreadSafeConn(tlsConn), err
 }
 
 // attemptWebsocketConnection - makes a single attempt at establishing a websocket connection with the broker
