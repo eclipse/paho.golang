@@ -37,7 +37,6 @@ type MIDService interface {
 	Request(*CPContext) (uint16, error)
 	Get(uint16) *CPContext
 	Free(uint16)
-	Clear()
 }
 
 // CPContext is the struct that is used to return responses to
@@ -56,6 +55,17 @@ type MIDs struct {
 	sync.RWMutex
 	lastMid uint16
 	index   []*CPContext // index of slice is (messageid - 1)
+}
+
+func NewMIDs(inUse map[uint16]*CPContext) *MIDs {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	for mid, c := range inUse {
+		m.index[mid-1] = c
+		if mid > m.lastMid {
+			m.lastMid = mid
+		}
+	}
+	return m
 }
 
 // Request is the library provided MIDService's implementation of
@@ -86,21 +96,6 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 	return 0, ErrorMidsExhausted
 }
 
-// ClaimID is the library provided MIDService's implementation of
-// the required interface function()
-func (m *MIDs) ClaimID(i uint16, c *CPContext) error {
-	m.Lock()
-	defer m.Unlock()
-	if m.index[i-1] != nil {
-		return ErrorMidInUse
-	}
-	m.index[i-1] = c
-	if i > m.lastMid {
-		m.lastMid = i
-	}
-	return nil
-}
-
 // Get is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Get(i uint16) *CPContext {
@@ -115,10 +110,4 @@ func (m *MIDs) Free(i uint16) {
 	m.Lock()
 	m.index[i-1] = nil
 	m.Unlock()
-}
-
-// Clear is the library provided MIDService's implementation of
-// the required interface function()
-func (m *MIDs) Clear() {
-	m.index = make([]*CPContext, int(midMax))
 }

@@ -121,27 +121,27 @@ func TestUsingFullBandOfMID(t *testing.T) {
 	}
 }
 
-func TestMidClaimID(t *testing.T) {
-	m := &MIDs{index: make([]*CPContext, midMax)}
+func TestMidNewMIDs(t *testing.T) {
+	// Create a new MIDs with a map that has an entry
+	inUse := make(map[uint16]*CPContext)
 	cp := &CPContext{}
+	inUse[5] = cp
+	m := NewMIDs(inUse)
+	assert.Equal(t, cp, m.Get(5))
+	for i := uint16(1); i < 5; i++ {
+		assert.Nil(t, m.Get(i))
+	}
+	for i := uint16(6); i < midMax; i++ {
+		assert.Nil(t, m.Get(i))
+	}
+	assert.Nil(t, m.Get(midMax))
 
-	// Claim ID and then get the CPContext value back
-	err := m.ClaimID(42, cp)
-	assert.Nil(t, err)
-	assert.Equal(t, cp, m.Get(42))
-
-	// Free the ID, then claim it again
-	m.Free(42)
-	assert.Nil(t, m.Get(42))
-	err = m.ClaimID(42, cp)
-	assert.Nil(t, err)
-	assert.Equal(t, cp, m.Get(42))
-
-	// Claim an ID that is already in use
-	id, err := m.Request(cp)
-	assert.Nil(t, err)
-	err = m.ClaimID(id, cp)
-	assert.ErrorIs(t, err, ErrorMidInUse)
+	// Create a new MIDs that is empty
+	m = NewMIDs(nil)
+	for i := uint16(1); i < midMax; i++ {
+		assert.Nil(t, m.Get(i))
+	}
+	assert.Nil(t, m.Get(midMax))
 }
 
 func BenchmarkRequestMID(b *testing.B) {
