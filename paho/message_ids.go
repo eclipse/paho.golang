@@ -17,22 +17,14 @@ const (
 // free message ids to be used.
 var ErrorMidsExhausted = errors.New("all message ids in use")
 
-// ErrorMidInUse is returned from ClaimID() when the requested
-// message id is already in use.
-var ErrorMidInUse = errors.New("message id already in use")
-
 // MIDService defines the interface for a struct that handles the
 // relationship between message ids and CPContexts
 // Request() takes a *CPContext and returns a uint16 that is the
 // messageid that should be used by the code that called Request()
-// ClaimID() takes a unit16 that is a messageid and its corresponding
-// *CPContext to mark that messageid as in use. This is used when
-// reconnecting with an existing session that has outstanding messages
 // Get() takes a uint16 that is a messageid and returns the matching
 // *CPContext that the MIDService has associated with that messageid
 // Free() takes a uint16 that is a messageid and instructs the MIDService
 // to mark that messageid as available for reuse
-// Clear() resets the internal state of the MIDService
 type MIDService interface {
 	Request(*CPContext) (uint16, error)
 	Get(uint16) *CPContext
@@ -57,6 +49,9 @@ type MIDs struct {
 	index   []*CPContext // index of slice is (messageid - 1)
 }
 
+// NewMIDs returns a new MIDs instance with message IDs claimed using
+// the information in the supplied map. nil may be passed if no message IDs
+// need to be claimed.
 func NewMIDs(inUse map[uint16]*CPContext) *MIDs {
 	m := &MIDs{index: make([]*CPContext, midMax)}
 	for mid, c := range inUse {
