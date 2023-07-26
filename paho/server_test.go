@@ -72,7 +72,7 @@ func (t *testServer) Run() {
 				log.Println("error in test server reading packet", err)
 				return
 			}
-			log.Println("test server received a control packet:", recv.Type)
+			log.Println("test server received a control packet:", recv.PacketType())
 			switch recv.Type {
 			case packets.CONNECT:
 				log.Println("received", recv.Content.(*packets.Connect))
