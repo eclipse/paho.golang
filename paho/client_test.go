@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"sync"
@@ -88,6 +87,15 @@ func TestClientConnect(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 }
 
+func fakeConnect(c *Client) {
+	c.stop = make(chan struct{})
+	c.publishPackets = make(chan *packets.Publish)
+	c.serverInflight = semaphore.NewWeighted(int64(c.serverProps.ReceiveMaximum))
+	c.clientInflight = semaphore.NewWeighted(int64(c.clientProps.ReceiveMaximum))
+	c.startNetworkLoops()
+	c.startWorkers(30)
+}
+
 func TestClientSubscribe(t *testing.T) {
 	ts := newTestServer()
 	ts.SetResponse(packets.SUBACK, &packets.Suback{
@@ -103,10 +111,7 @@ func TestClientSubscribe(t *testing.T) {
 	require.NotNil(t, c)
 	c.SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
 
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	s := &Subscribe{
 		Subscriptions: []SubscribeOptions{
@@ -138,10 +143,7 @@ func TestClientUnsubscribe(t *testing.T) {
 	require.NotNil(t, c)
 	c.SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
 
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	u := &Unsubscribe{
 		Topics: []string{
@@ -170,10 +172,7 @@ func TestClientPublishQoS0(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	p := &Publish{
 		Topic:   "test/0",
@@ -204,10 +203,7 @@ func TestClientPublishQoS1(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	p := &Publish{
 		Topic:   "test/1",
@@ -243,10 +239,7 @@ func TestClientPublishQoS2(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	p := &Publish{
 		Topic:   "test/2",
@@ -281,10 +274,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -317,10 +307,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -353,10 +340,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -553,10 +537,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	err := ts.SendPacket(&packets.Disconnect{
 		ReasonCode: packets.DisconnectServerShuttingDown,
@@ -586,10 +567,7 @@ func TestAuthenticate(t *testing.T) {
 
 	c.serverInflight = semaphore.NewWeighted(10000)
 	c.clientInflight = semaphore.NewWeighted(10000)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cf()
@@ -785,7 +763,7 @@ func TestDisconnect(t *testing.T) {
 
 	// disconnect again should return an error but not block
 	err = c.Disconnect(&Disconnect{})
-	require.True(t, errors.Is(err, io.ErrClosedPipe))
+	require.EqualError(t, err, "client already stopped")
 }
 
 func TestCloseDeadlock(t *testing.T) {

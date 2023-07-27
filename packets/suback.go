@@ -34,7 +34,7 @@ const (
 	SubackWildcardsubscriptionsnotsupported   = 0xA2
 )
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (s *Suback) Unpack(r *bytes.Buffer) error {
 	var err error
 	s.PacketID, err = readUint16(r)
@@ -63,10 +63,12 @@ func (s *Suback) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (s *Suback) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: SUBACK}}
-	cp.Content = s
+	return s.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (s *Suback) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: SUBACK}, Content: s}
 }
 
 // Reason returns a string representation of the meaning of the ReasonCode

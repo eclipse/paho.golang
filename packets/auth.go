@@ -70,8 +70,10 @@ func (a *Auth) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (a *Auth) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: AUTH}}
-	cp.Content = a
+	return a.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (a *Auth) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: AUTH}, Content: a}
 }

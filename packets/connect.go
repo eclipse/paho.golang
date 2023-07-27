@@ -85,7 +85,7 @@ func (c *Connect) UnpackFlags(b byte) {
 	c.UsernameFlag = 1&(b>>7) > 0
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connect) Unpack(r *bytes.Buffer) error {
 	var err error
 
@@ -182,8 +182,10 @@ func (c *Connect) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (c *Connect) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: CONNECT}}
-	cp.Content = c
+	return c.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (c *Connect) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: CONNECT}, Content: c}
 }

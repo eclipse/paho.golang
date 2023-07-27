@@ -26,8 +26,10 @@ func (p *Pingresp) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (p *Pingresp) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: PINGRESP}}
-	cp.Content = p
+	return p.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (p *Pingresp) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: PINGRESP}, Content: p}
 }

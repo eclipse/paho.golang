@@ -58,10 +58,12 @@ func (u *Unsuback) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (u *Unsuback) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: UNSUBACK}}
-	cp.Content = u
+	return u.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (u *Unsuback) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: UNSUBACK}, Content: u}
 }
 
 // Reason returns a string representation of the meaning of the ReasonCode

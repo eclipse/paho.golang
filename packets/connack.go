@@ -43,7 +43,7 @@ func (c *Connack) String() string {
 	return fmt.Sprintf("CONNACK: ReasonCode:%d SessionPresent:%t\nProperties:\n%s", c.ReasonCode, c.SessionPresent, c.Properties)
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connack) Unpack(r *bytes.Buffer) error {
 	connackFlags, err := r.ReadByte()
 	if err != nil {
@@ -88,10 +88,12 @@ func (c *Connack) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (c *Connack) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: CONNACK}}
-	cp.Content = c
+	return c.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (c *Connack) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: CONNACK}, Content: c}
 }
 
 // Reason returns a string representation of the meaning of the ReasonCode

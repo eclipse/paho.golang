@@ -28,7 +28,7 @@ func (p *Pubrel) String() string {
 	return b.String()
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (p *Pubrel) Unpack(r *bytes.Buffer) error {
 	var err error
 	success := r.Len() == 2
@@ -70,8 +70,10 @@ func (p *Pubrel) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (p *Pubrel) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: PUBREL, Flags: 2}}
-	cp.Content = p
+	return p.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (p *Pubrel) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: PUBREL, Flags: 2}, Content: p}
 }

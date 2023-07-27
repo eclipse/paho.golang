@@ -39,6 +39,7 @@ type (
 		Unpack(*bytes.Buffer) error
 		Buffers() net.Buffers
 		WriteTo(io.Writer) (int64, error)
+		ToControlPacket() *ControlPacket
 	}
 
 	// FixedHeader is the definition of a control packet fixed header

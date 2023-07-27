@@ -79,10 +79,12 @@ func (d *Disconnect) Buffers() net.Buffers {
 
 // WriteTo is the implementation of the interface required function for a packet
 func (d *Disconnect) WriteTo(w io.Writer) (int64, error) {
-	cp := &ControlPacket{FixedHeader: FixedHeader{Type: DISCONNECT}}
-	cp.Content = d
+	return d.ToControlPacket().WriteTo(w)
+}
 
-	return cp.WriteTo(w)
+// ToControlPacket is the implementation of the interface required function for a packet
+func (d *Disconnect) ToControlPacket() *ControlPacket {
+	return &ControlPacket{FixedHeader: FixedHeader{Type: DISCONNECT}, Content: d}
 }
 
 // Reason returns a string representation of the meaning of the ReasonCode

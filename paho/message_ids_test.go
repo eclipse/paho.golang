@@ -3,16 +3,15 @@ package paho
 import (
 	"context"
 	"log"
+	"math"
+	"math/rand"
 	"os"
 	"testing"
 	"time"
-	"math"
-	"math/rand"
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/semaphore"
 )
 
 func TestMidNoExhaustion(t *testing.T) {
@@ -29,12 +28,7 @@ func TestMidNoExhaustion(t *testing.T) {
 	})
 	require.NotNil(t, c)
 
-	c.serverInflight = semaphore.NewWeighted(10)
-	c.clientInflight = semaphore.NewWeighted(10)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	fakeConnect(c)
 
 	for i := 0; i < 70000; i++ {
 		p := &Publish{
@@ -52,16 +46,21 @@ func TestMidNoExhaustion(t *testing.T) {
 }
 
 func TestMidExhaustion(t *testing.T) {
+	ts := newTestServer()
+	ts.SetResponse(packets.PUBACK, &packets.Puback{
+		ReasonCode: packets.PubackSuccess,
+		Properties: &packets.Properties{},
+	})
+	go ts.Run()
+	defer ts.Stop()
+
 	c := NewClient(ClientConfig{
-		Conn: nil,
+		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
 
-	c.serverInflight = semaphore.NewWeighted(10)
-	c.clientInflight = semaphore.NewWeighted(10)
-	c.stop = make(chan struct{})
-	c.publishPackets = make(chan *packets.Publish)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
+	fakeConnect(c)
+	c.SetDebugLogger(log.New(os.Stderr, "TESTMIDEXHAUSTION: ", log.LstdFlags))
 
 	cp := &CPContext{}
 	for i := range c.MIDs.(*MIDs).index {
@@ -79,7 +78,7 @@ func TestMidExhaustion(t *testing.T) {
 	assert.ErrorIs(t, err, ErrorMidsExhausted)
 }
 
-func TestUsingFullBandOfMID(t *testing.T){
+func TestUsingFullBandOfMID(t *testing.T) {
 	m := &MIDs{index: make([]*CPContext, midMax)}
 	cp := &CPContext{}
 
@@ -109,7 +108,7 @@ func TestUsingFullBandOfMID(t *testing.T){
 	for i := 0; i < 60000; i++ {
 		r := uint16(rand.Intn(math.MaxUint16 + 1))
 		if r == 0 {
-		  r += 1
+			r += 1
 		}
 		m.Free(r)
 		h[r] = true
