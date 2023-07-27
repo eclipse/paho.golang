@@ -82,6 +82,10 @@ func (m *MIDs) Request(c *CPContext) (uint16, error) {
 // Get is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Get(i uint16) *CPContext {
+	// 0 Packet Identifier is invalid but just in case handled with returning nil to avoid panic.
+	if i == 0 {
+	  return nil
+	}
 	m.Lock()
 	defer m.Unlock()
 	return m.index[i-1]
@@ -90,6 +94,10 @@ func (m *MIDs) Get(i uint16) *CPContext {
 // Free is the library provided MIDService's implementation of
 // the required interface function()
 func (m *MIDs) Free(i uint16) {
+	// 0 Packet Identifier is invalid but just in case handled to avoid panic.
+	if i == 0 {
+	  return
+	}
 	m.Lock()
 	m.index[i-1] = nil
 	m.Unlock()
