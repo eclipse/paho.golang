@@ -277,6 +277,18 @@ func (c *ControlPacket) WriteTo(w io.Writer) (int64, error) {
 		c.remainingLength += len(b)
 	}
 
+	if c.Type == PUBLISH { // Fixed flags for PUBLISH packets contain QOS, DUP and RETAIN flags.
+		p := c.Content.(*Publish)
+		f := p.QoS << 1
+		if p.Duplicate {
+			f |= 1 << 3
+		}
+		if p.Retain {
+			f |= 1
+		}
+		c.FixedHeader.Flags = c.Type<<4 | f
+	}
+
 	var header bytes.Buffer
 	if _, err := c.FixedHeader.WriteTo(&header); err != nil {
 		return 0, err
