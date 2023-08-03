@@ -46,12 +46,15 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 				case "wss":
 					cfg.Conn, err = attemptWebsocketConnection(connectionCtx, cfg.TlsCfg, cfg.WebSocketCfg, u)
 				default:
-					cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
+					if cfg.OnConnectError != nil {
+						cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
+					}
 					cancelConnCtx()
 					continue
 				}
 			}
 
+			var connack *paho.Connack
 			if err == nil {
 				cli := paho.NewClient(cfg.ClientConfig)
 				if cfg.PahoDebug != nil {
@@ -63,11 +66,10 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 				}
 
 				cp := cfg.buildConnectPacket()
-				var ca *paho.Connack
-				ca, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
-				if err == nil {                          // Successfully connected
+				connack, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
+				if err == nil {                               // Successfully connected
 					cancelConnCtx()
-					return cli, ca
+					return cli, connack
 				}
 			}
 			cancelConnCtx()
@@ -78,7 +80,11 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 			}
 
 			if cfg.OnConnectError != nil {
-				cfg.OnConnectError(fmt.Errorf("failed to connect to %s: %w", u.String(), err))
+				cerr := fmt.Errorf("failed to connect to %s: %w", u.String(), err)
+				if connack != nil {
+					cerr = NewConnackError(err, connack)
+				}
+				cfg.OnConnectError(cerr)
 			}
 		}
 
@@ -149,7 +155,6 @@ func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebS
 		dialer = &d
 	}
 	ws, _, err := dialer.DialContext(ctx, brokerURL.String(), requestHeader)
-
 	if err != nil {
 		return nil, fmt.Errorf("websocket connection failed: %w", err)
 	}
