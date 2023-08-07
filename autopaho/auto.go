@@ -51,6 +51,8 @@ type ClientConfig struct {
 	PahoDebug  paho.Logger // debugger passed to the paho package (will default to NOOPLogger{})
 	PahoErrors paho.Logger // error logger passed to the paho package (will default to NOOPLogger{})
 
+	OnDisconnectConsumeErrChan        bool          // if this is not set can get goroutine leak since errChan on applicable error will remain waiting after a disconnect
+	OnDisconnectConsumeErrChanTimeout time.Duration // length to wait for error on errChan (defaults to 2s)
 	connectUsername string
 	connectPassword []byte
 
@@ -177,6 +179,9 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	if cfg.ConnectTimeout == 0 {
 		cfg.ConnectTimeout = 10 * time.Second
 	}
+	if cfg.OnDisconnectConsumeErrChanTimeout == 0 {
+		cfg.OnDisconnectConsumeErrChanTimeout = 2 * time.Second
+	}
 
 	innerCtx, cancel := context.WithCancel(ctx)
 	c := ConnectionManager{
@@ -237,6 +242,15 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 					cfg.Debug.Printf("broker connection handler exiting due to context: %s\n", ctx.Err())
 				} else {
 					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())
+					if cfg.OnDisconnectConsumeErrChan {
+						timeStart := time.Now()
+						select {
+						case err = <-errChan:
+							cfg.Debug.Printf("got err:(%v) on errChan timeWaiting:%v; now break mainLoop\n", err, time.Since(timeStart))
+						case <-time.After(cfg.OnDisconnectConsumeErrChanTimeout):
+							cfg.Debug.Printf("timed out (%v) waiting on errChan, now break mainLoop\n", cfg.OnDisconnectConsumeErrChanTimeout)
+						}
+					}
 				}
 				break mainLoop
 			}
