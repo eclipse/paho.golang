@@ -121,6 +121,46 @@ func TestUsingFullBandOfMID(t *testing.T){
 	}
 }
 
+func TestMIDsGetAllIDs(t *testing.T) {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	for i := uint16(0); i < midMax; i++ {
+		cp := &CPContext{}
+		m.index[i] = cp
+	}
+
+	for i := uint16(0); i < midMax; i++ {
+		assert.NotNil(t, m.Get(i+1))
+	}
+}
+
+// Expecting MIDs.Get(0) returns always nil, because 0 identifier is invalid and cannot be retained in MIDs.
+func TestMIDsGetZeroID(t *testing.T) {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	assert.NotPanics(t, func(){ m.Get(0) })
+}
+
+func TestMIDsFreeAllIDs(t *testing.T) {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	for i := uint16(0); i < midMax; i++ {
+		cp := &CPContext{}
+		m.index[i] = cp
+	}
+
+	for i := uint16(0); i < midMax; i++ {
+		m.Free(i+1)
+	}
+
+	for i := uint16(0); i < midMax; i++ {
+		assert.Nil(t, m.index[i])
+	}
+}
+
+// Expecting MIDs.Free(0) always do nothing (no panic), because 0 identifier is invalid and ignored.
+func TestMIDsFreeZeroID(t *testing.T) {
+	m := &MIDs{index: make([]*CPContext, midMax)}
+	assert.NotPanics(t, func(){ m.Free(0) })
+}
+
 func BenchmarkRequestMID(b *testing.B) {
 	m := &MIDs{index: make([]*CPContext, 65535)}
 	cp := &CPContext{}
