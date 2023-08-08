@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -43,6 +44,12 @@ type ClientConfig struct {
 	ConnectRetryDelay time.Duration    // How long to wait between connection attempts (defaults to 10s)
 	ConnectTimeout    time.Duration    // How long to wait for the connection process to complete (defaults to 10s)
 	WebSocketCfg      *WebSocketConfig // Enables customisation of the websocket connection
+
+	// AttemptConnection, if provided, will be called to establish a network connection.
+	// The returned `conn` must support thread safe writing; most wrapped net.Conn implementations like tls.Conn
+	// are not thread safe for writing.
+	// To fix, use packets.NewThreadSafeConn wrapper or extend the custom net.Conn struct with sync.Locker.
+	AttemptConnection func(context.Context, ClientConfig, *url.URL) (net.Conn, error)
 
 	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
 	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails
@@ -185,7 +192,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 		cancelCtx: cancel,
 		done:      make(chan struct{}),
 	}
-	errChan := make(chan error)
+	errChan := make(chan error, 1) // Will be sent one, and only one error per connection (buffered to prevent deadlock)
 
 	go func() {
 		defer close(c.done)
@@ -213,14 +220,6 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			c.mu.Unlock()
 			close(c.connUp)
 
-			if cfg.PahoDebug != nil {
-				cli.SetDebugLogger(cfg.PahoDebug)
-			}
-
-			if cfg.PahoErrors != nil {
-				cli.SetErrorLogger(cfg.PahoErrors)
-			}
-
 			if cfg.OnConnectionUp != nil {
 				cfg.OnConnectionUp(&c, connAck)
 			}
@@ -229,11 +228,11 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			select {
 			case err = <-errChan: // Message on error channel indicates connection has (or will) drop.
 			case <-innerCtx.Done():
-				// As the connection is up we call disconnect to shut things down cleanly
+				// As the connection is up, we call disconnect to shut things down cleanly
 				if err = c.cli.Disconnect(&paho.Disconnect{ReasonCode: 0}); err != nil {
 					cfg.Debug.Printf("disconnect returned error: %s\n", err)
 				}
-				if ctx.Err() != nil { // If this is due to outer context being cancelled then this will have happened before the inner one gets cancelled.
+				if ctx.Err() != nil { // If this is due to outer context being cancelled, then this will have happened before the inner one gets cancelled.
 					cfg.Debug.Printf("broker connection handler exiting due to context: %s\n", ctx.Err())
 				} else {
 					cfg.Debug.Printf("broker connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())

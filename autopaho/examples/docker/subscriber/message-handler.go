@@ -42,7 +42,7 @@ func (o *handler) Close() {
 	}
 }
 
-// Message
+// Message is used for marshalling/unmarshalling the JSON message (just a count)
 type Message struct {
 	Count uint64
 }
