@@ -33,23 +33,35 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig) (*paho.Cli
 		for _, u := range cfg.BrokerUrls {
 			connectionCtx, cancelConnCtx := context.WithTimeout(ctx, cfg.ConnectTimeout)
 
-			switch strings.ToLower(u.Scheme) {
-			case "mqtt", "tcp", "":
-				cfg.Conn, err = attemptTCPConnection(connectionCtx, u.Host)
-			case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps":
-				cfg.Conn, err = attemptTLSConnection(connectionCtx, cfg.TlsCfg, u.Host)
-			case "ws":
-				cfg.Conn, err = attemptWebsocketConnection(connectionCtx, nil, cfg.WebSocketCfg, u)
-			case "wss":
-				cfg.Conn, err = attemptWebsocketConnection(connectionCtx, cfg.TlsCfg, cfg.WebSocketCfg, u)
-			default:
-				cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
-				cancelConnCtx()
-				continue
+			if cfg.AttemptConnection != nil { // Use custom function if it is provided
+				cfg.Conn, err = cfg.AttemptConnection(ctx, cfg, u)
+			} else {
+				switch strings.ToLower(u.Scheme) {
+				case "mqtt", "tcp", "":
+					cfg.Conn, err = attemptTCPConnection(connectionCtx, u.Host)
+				case "ssl", "tls", "mqtts", "mqtt+ssl", "tcps":
+					cfg.Conn, err = attemptTLSConnection(connectionCtx, cfg.TlsCfg, u.Host)
+				case "ws":
+					cfg.Conn, err = attemptWebsocketConnection(connectionCtx, nil, cfg.WebSocketCfg, u)
+				case "wss":
+					cfg.Conn, err = attemptWebsocketConnection(connectionCtx, cfg.TlsCfg, cfg.WebSocketCfg, u)
+				default:
+					cfg.OnConnectError(fmt.Errorf("unsupported scheme (%s) user in url %s", u.Scheme, u.String()))
+					cancelConnCtx()
+					continue
+				}
 			}
 
 			if err == nil {
 				cli := paho.NewClient(cfg.ClientConfig)
+				if cfg.PahoDebug != nil {
+					cli.SetDebugLogger(cfg.PahoDebug)
+				}
+
+				if cfg.PahoErrors != nil {
+					cli.SetErrorLogger(cfg.PahoErrors)
+				}
+
 				cp := cfg.buildConnectPacket()
 				var ca *paho.Connack
 				ca, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
