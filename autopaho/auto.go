@@ -226,8 +226,9 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 
 			var err error
 			select {
-			case err = <-errChan: // Message on error channel indicates connection has (or will) drop.
+			case err = <-errChan: // Message on the error channel indicates connection has (or will) drop.
 			case <-innerCtx.Done():
+				eh.shutdown() // Prevent any errors triggered by closure of context from reaching user
 				// As the connection is up, we call disconnect to shut things down cleanly
 				if err = c.cli.Disconnect(&paho.Disconnect{ReasonCode: 0}); err != nil {
 					cfg.Debug.Printf("disconnect returned error: %s\n", err)

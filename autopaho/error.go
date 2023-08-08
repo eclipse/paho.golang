@@ -10,6 +10,9 @@ import (
 // errorHandler provides the onClientError callback function that will be called by the Paho library. The sole aim
 // of this is to pass a single error onto the error channel (the library may send multiple errors; only the first
 // will be processed).
+// The callback userOnClientError will be called a maximum of one time. If userOnServerDisconnect is called, then
+// userOnClientError will not be called (but there is a small chance that userOnClientError will be called followed
+// by userOnServerDisconnect (if we encounter an error sending but there is a DISCONNECT in the queue).
 type errorHandler struct {
 	debug paho.Logger
 
@@ -20,15 +23,21 @@ type errorHandler struct {
 	userOnServerDisconnect func(*paho.Disconnect) // User provided OnServerDisconnect function
 }
 
+// shutdown prevents any further calls from emitting a message
+func (e *errorHandler) shutdown() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.errChan = nil
+}
+
 // onClientError called by the paho library when an error occurs. We assume that the error is always fatal
 func (e *errorHandler) onClientError(err error) {
-	e.handleError(err)
-	if e.userOnClientError != nil {
+	if e.handleError(err) && e.userOnClientError != nil {
 		go e.userOnClientError(err)
 	}
 }
 
-// onClientError called by the paho library when the server requests a disconnection (for example as part of a
+// onClientError called by the paho library when the server requests a disconnection (for example, as part of a
 // clean broker shutdown). We want to begin attempting to reconnect when this occurs (and pass a detectable error
 // to the user)
 func (e *errorHandler) onServerDisconnect(d *paho.Disconnect) {
@@ -39,15 +48,19 @@ func (e *errorHandler) onServerDisconnect(d *paho.Disconnect) {
 }
 
 // handleError ensures that only a single error is sent to the channel (all errors go to the users OnClientError function)
-func (e *errorHandler) handleError(err error) {
+// Returns true if the error was sent to the channel (i.e. this is the first error we have seen)
+func (e *errorHandler) handleError(err error) bool {
 	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.errChan != nil {
+	errChan := e.errChan // prevent any chance of deadlock with concurrent call to e.shutdown
+	e.errChan = nil
+	e.mu.Unlock()
+	if errChan != nil {
 		e.debug.Printf("received error: %s", err)
-		e.errChan <- err
-		e.errChan = nil
+		errChan <- err
+		return true
 	} else {
 		e.debug.Printf("received extra error: %s", err)
+		return false
 	}
 }
 
