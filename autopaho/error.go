@@ -58,10 +58,9 @@ func (e *errorHandler) handleError(err error) bool {
 		e.debug.Printf("received error: %s", err)
 		errChan <- err
 		return true
-	} else {
-		e.debug.Printf("received extra error: %s", err)
-		return false
 	}
+	e.debug.Printf("received extra error: %s", err)
+	return false
 }
 
 // DisconnectError will be passed when the server requests disconnection (allows this error type to be detected)
