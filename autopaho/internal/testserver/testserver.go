@@ -127,6 +127,11 @@ func New(logger Logger) *Instance {
 	}
 }
 
+// Connected returns true if the test server has an active connection with the client
+func (i *Instance) Connected() bool {
+	return i.connected.Load()
+}
+
 // Connect establishes a connection to the test broker
 // Note that this can fail!
 // Returns a net.Conn (to pass to paho), a channel that will be closed when connection has shutdown and
