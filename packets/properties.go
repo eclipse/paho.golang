@@ -766,11 +766,11 @@ func (i *Properties) Unpack(r *bytes.Buffer, p byte) error {
 // ValidProperties is a map of the various properties and the
 // PacketTypes that property is valid for.
 var ValidProperties = map[byte]map[byte]struct{}{
-	PropPayloadFormat:          {PUBLISH: {}},
-	PropMessageExpiry:          {PUBLISH: {}},
-	PropContentType:            {PUBLISH: {}},
-	PropResponseTopic:          {PUBLISH: {}},
-	PropCorrelationData:        {PUBLISH: {}},
+	PropPayloadFormat:          {CONNECT: {}, PUBLISH: {}},
+	PropMessageExpiry:          {CONNECT: {}, PUBLISH: {}},
+	PropContentType:            {CONNECT: {}, PUBLISH: {}},
+	PropResponseTopic:          {CONNECT: {}, PUBLISH: {}},
+	PropCorrelationData:        {CONNECT: {}, PUBLISH: {}},
 	PropTopicAlias:             {PUBLISH: {}},
 	PropSubscriptionIdentifier: {PUBLISH: {}, SUBSCRIBE: {}},
 	PropSessionExpiryInterval:  {CONNECT: {}, CONNACK: {}, DISCONNECT: {}},
