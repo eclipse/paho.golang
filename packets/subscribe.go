@@ -27,6 +27,16 @@ func (s *Subscribe) String() string {
 	return b.String()
 }
 
+// SetIdentifier sets the packet identifier
+func (s *Subscribe) SetIdentifier(packetID uint16) {
+	s.PacketID = packetID
+}
+
+// Type returns the current packet type
+func (s *Subscribe) Type() byte {
+	return SUBSCRIBE
+}
+
 // SubOptions is the struct representing the options for a subscription
 type SubOptions struct {
 	Topic             string
@@ -37,6 +47,7 @@ type SubOptions struct {
 }
 
 // Pack is the implementation of the interface required function for a packet
+// Note that this does not pack the topic
 func (s *SubOptions) Pack() byte {
 	var ret byte
 	ret |= s.QoS & 0x03
@@ -46,12 +57,13 @@ func (s *SubOptions) Pack() byte {
 	if s.RetainAsPublished {
 		ret |= 1 << 3
 	}
-	ret |= s.RetainHandling & 0x30
+	ret |= (s.RetainHandling << 4) & 0x30
 
 	return ret
 }
 
 // Unpack is the implementation of the interface required function for a packet
+// Note that this does not unpack the topic
 func (s *SubOptions) Unpack(r *bytes.Buffer) error {
 	b, err := r.ReadByte()
 	if err != nil {
@@ -59,9 +71,9 @@ func (s *SubOptions) Unpack(r *bytes.Buffer) error {
 	}
 
 	s.QoS = b & 0x03
-	s.NoLocal = (b & 1 << 2) == 1
-	s.RetainAsPublished = (b & 1 << 3) == 1
-	s.RetainHandling = b & 0x30
+	s.NoLocal = b&(1<<2) != 0
+	s.RetainAsPublished = b&(1<<3) != 0
+	s.RetainHandling = 3 & (b >> 4)
 
 	return nil
 }
