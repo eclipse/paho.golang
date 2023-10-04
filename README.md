@@ -1,7 +1,9 @@
 Eclipse Paho MQTT Go client
 ===========================
 
-This repository contains the source code for the [Eclipse Paho](http://eclipse.org/paho) MQTT Go client library.
+This repository contains the source code for the [Eclipse Paho](http://eclipse.org/paho) MQTT V5 Go client library. 
+
+There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project and it's API varies considerably).
 
 Installation and Build
 ----------------------
@@ -22,7 +24,7 @@ examples off this folder in `paho/cmd` and extensions in `paho/extensions`.
 process (`mqtt` and `mqtts`) and will automatically reconnect should the connection drop. For many users this package
 will provide a simple way to connect and publish/subscribe as well as demonstrating how to use the `paho.golang/paho`.
 `autopaho/examples/docker` provides a full example using docker to run a publisher and subscriber (connecting to 
-mosquitto).  
+mosquitto).
 
 
 Reporting bugs
