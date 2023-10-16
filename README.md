@@ -3,7 +3,7 @@ Eclipse Paho MQTT Go client
 
 This repository contains the source code for the [Eclipse Paho](http://eclipse.org/paho) MQTT V5 Go client library. 
 
-**Warning breaking change** - Release 0.12 contains a breaking change; see the [release notes](https://github.com/eclipse/paho.golang/releases/tag/v0.12.0). Gollowing the release of v0.12 major changes will be introduced to the library ([full QOS1/2 support](https://github.com/eclipse/paho.golang/issues/25)); this may introduce further breaking changes (for more advanced users), and its likely that further testing will reveal issues (please assist us in testing this; the change gets us a lot closer to V1.0).
+**Warning breaking change** - Release 0.12 contains a breaking change; see the [release notes](https://github.com/eclipse/paho.golang/releases/tag/v0.12.0). Following the release of v0.12 major changes will be introduced to the library ([full QOS1/2 support](https://github.com/eclipse/paho.golang/issues/25)); this may introduce further breaking changes (for more advanced users), and its likely that further testing will reveal issues (please assist us in testing this; the change gets us a lot closer to V1.0).
 
 There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project and it's API varies considerably).
 
