@@ -112,7 +112,8 @@ func getCmConfig(cfg config) autopaho.ClientConfig {
 		ConnectTimeout:    time.Duration(5 * time.Second),
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
-			ctx, _ := context.WithTimeout(context.Background(), time.Duration(5*time.Second))
+			ctx, cancel := context.WithTimeout(context.Background(), time.Duration(5*time.Second))
+			defer cancel()
 			if _, err := cm.Subscribe(ctx, &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
 					{Topic: cfg.topic, QoS: cfg.qos},

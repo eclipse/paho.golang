@@ -1,6 +1,7 @@
 package testserver
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/eclipse/paho.golang/packets"
 )
@@ -50,6 +52,8 @@ const (
 	AppendAfterActionProcessed        = `Done`                   // Appended to message body after action carried out (does not apply to Publish)
 	midInitial                 uint16 = 200                      // Server side MIDs will start here (having different start points makes the logs easier to follow)
 	midMax                     uint16 = 65535
+	outgoingChanSize                  = 100 // Size of chan for outgoing packets (enables multiple packets to be in flight)
+	delayBetweenOutdoing              = time.Millisecond
 )
 
 // Logger mirrors paho.Logger
@@ -88,12 +92,14 @@ func NewStateInfo(sent *packets.ControlPacket, qos byte, topic string, payload [
 // Instance an instance of the test broker
 // Note that many variables are not mutex protected (because they are private and only accessed from one goroutine)
 type Instance struct {
-	logger    Logger // Used to output status info to assist with debugging
-	connected atomic.Bool
+	logger          Logger // Used to output status info to assist with debugging
+	connected       atomic.Bool
+	packetReceived  func(publish *packets.ControlPacket) error      // Will be called when a packet is received (return error to drop connection)
+	overrideConnAck func(cp *packets.Connect, cap *packets.Connack) // Will be called before CONNECT response transmitted, cap can be modified
 
 	// Below are not thread-safe (should only be accessed after checking connected)
-	connPktDone           bool                    // true if we have processed a CONNECT packet
-	sessionPresent        bool                    // true if a session exists (
+	connPktDone           bool                    // true if we have processed a CONNECT packet (ever!)
+	sessionPresent        bool                    // true if a session exists
 	sessionExpiryInterval uint32                  // as set on the most recent `connect` (we treat anything >0 as infinite)
 	subscriptions         map[string]subscription // Map from topic to subscription info
 
@@ -141,15 +147,30 @@ func (i *Instance) Connect(ctx context.Context) (net.Conn, chan struct{}, error)
 		return nil, nil, errors.New("already connected") // We only support a single connection
 	}
 	i.connPktDone = false // Connection packet should be the first thing we receive after each connection
+
+	// Note: net.Pipe is synchronous; an async pipe would probably better simulate a real connection
+	// Consider using something like github.com/grpc/grpc-go/test/bufconn/bufconn.go
+	// Output is buffered which means that there is some asynchronicity
 	userCon, ourCon := net.Pipe()
+
+	// Ensure both connections support thread safe writes
+	userCon = packets.NewThreadSafeConn(userCon)
+	ourCon = packets.NewThreadSafeConn(ourCon) // Should not be necessary but may avoid hard to spot bugs
+
+	done := make(chan struct{})
 	go func() {
-		<-ctx.Done() // Ensure that we exit cleanly if context closed
+		select {
+		case <-done:
+			return // shutdown via another mechanism
+		case <-ctx.Done(): // Ensure that we exit cleanly if context closed
+		}
+
 		if err := ourCon.Close(); err != nil {
 			i.logger.Printf("error closing ourConn: %s", err)
 		}
 	}()
 
-	outGoingPackets := make(chan *packets.ControlPacket)
+	outGoingPackets := make(chan *packets.ControlPacket, outgoingChanSize)
 	go func() {
 		if err := i.handleIncoming(ourCon, outGoingPackets); err != nil {
 			i.logger.Println("handleIncoming closed with error", err)
@@ -159,7 +180,6 @@ func (i *Instance) Connect(ctx context.Context) (net.Conn, chan struct{}, error)
 		close(outGoingPackets)
 	}()
 
-	done := make(chan struct{})
 	go func() {
 		i.handleOutgoing(outGoingPackets, ourCon) // will return after outGoingPackets closed
 		if err := ourCon.Close(); err != nil {    // Ensure the other end receives notification of the closure
@@ -171,7 +191,7 @@ func (i *Instance) Connect(ctx context.Context) (net.Conn, chan struct{}, error)
 	}()
 
 	i.logger.Println("connection up")
-	return packets.NewThreadSafeConn(userCon), done, nil
+	return userCon, done, nil
 }
 
 // handleIncoming runs as a goroutine processing inbound data received on net.Conn until an error occurs (i.e. Conn Closed)
@@ -179,9 +199,12 @@ func (i *Instance) handleIncoming(conn io.Reader, out chan<- *packets.ControlPac
 	for {
 		p, err := packets.ReadPacket(conn)
 		if err != nil {
-			var remaining bytes.Buffer // Get anything else we have received in case that helps identify the issue
-			_, _ = remaining.ReadFrom(conn)
-			return fmt.Errorf("handleIncoming:ReadPacket: %w Remaining data: %v", err, remaining.Bytes())
+			r := bufio.NewReader(conn)
+			time.Sleep(time.Millisecond) // Wait a millisecond for other data to come in (helps with debugging)
+			buffSize := r.Buffered()
+			remaining := make([]byte, buffSize)
+			_, _ = r.Read(remaining)
+			return fmt.Errorf("handleIncoming:ReadPacket: %w Remaining data: %v", err, remaining)
 		}
 		if err = i.processIncoming(p, out); err != nil {
 			return fmt.Errorf("handleIncoming:processIncoming: %w", err)
@@ -194,7 +217,8 @@ func (i *Instance) handleIncoming(conn io.Reader, out chan<- *packets.ControlPac
 func (i *Instance) handleOutgoing(in <-chan *packets.ControlPacket, out io.Writer) {
 	for p := range in {
 		i.logger.Println("Sending packet to client ", p)
-		_, _ = p.WriteTo(out) // We can just ignore any errors (Close will be picked up in handleIncoming, and the chan closed)
+		_, _ = p.WriteTo(out)            // We can just ignore any errors (Close will be picked up in handleIncoming, and the chan closed)
+		time.Sleep(delayBetweenOutdoing) // Slow down responses to enable multiple inflight messages
 	}
 }
 
@@ -209,6 +233,12 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 	}
 
 	i.logger.Println("packet received", cp)
+
+	if i.packetReceived != nil {
+		if err := i.packetReceived(cp); err != nil {
+			return err
+		}
+	}
 
 	// the first packet sent from the Client to the Server MUST be a CONNECT packet [MQTT-3.1.0-1].
 	if !i.connPktDone && cp.Type != packets.CONNECT {
@@ -246,9 +276,16 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 		if p.Properties.SessionExpiryInterval != nil {
 			i.sessionExpiryInterval = *p.Properties.SessionExpiryInterval
 		}
+		// We return whatever session expiry interval was requested
+		response.Content.(*packets.Connack).Properties = &packets.Properties{
+			SessionExpiryInterval: &i.sessionExpiryInterval,
+		}
+		if i.overrideConnAck != nil {
+			i.overrideConnAck(p, response.Content.(*packets.Connack))
+		}
 		out <- response
 		return nil
-	case packets.PUBLISH: // client is publishing something
+	case packets.PUBLISH: // client is publishing something (warning - if client resends the same message then we will close connection again)
 		p := cp.Content.(*packets.Publish)
 		if bytes.Compare(p.Payload, []byte(CloseOnPublishReceived)) == 0 {
 			out <- nil
@@ -454,6 +491,20 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 	default:
 		return fmt.Errorf("unsupported packet type %d received", cp.Type)
 	}
+}
+
+// SetPacketReceivedCallback sets callback that will be called whenever a packet is received
+// If the callback returns an error the connection will be dropped
+// Note: this is not thread safe - call before sending any messages
+func (i *Instance) SetPacketReceivedCallback(callback func(publish *packets.ControlPacket) error) {
+	i.packetReceived = callback
+}
+
+// SetConnectCallback sets callback that will be called before the response to a CONNECT packet is sent.
+// The CONNACK packet mak be altered if required.
+// Note: this is not thread safe - call before sending any messages
+func (i *Instance) SetConnectCallback(callback func(cp *packets.Connect, cap *packets.Connack)) {
+	i.overrideConnAck = callback
 }
 
 // sendMessageToSubscriber starts the process of sending a message to subscriber (as the topic must be an exact match,

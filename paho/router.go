@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/eclipse/paho.golang/packets"
+	"github.com/eclipse/paho.golang/paho/log"
 )
 
 // MessageHandler is a type for a function that is invoked
@@ -24,7 +25,7 @@ type Router interface {
 	RegisterHandler(string, MessageHandler)
 	UnregisterHandler(string)
 	Route(*packets.Publish)
-	SetDebugLogger(Logger)
+	SetDebugLogger(log.Logger)
 }
 
 // StandardRouter is a library provided implementation of a Router that
@@ -33,7 +34,7 @@ type StandardRouter struct {
 	sync.RWMutex
 	subscriptions map[string][]MessageHandler
 	aliases       map[uint16]string
-	debug         Logger
+	debug         log.Logger
 }
 
 // NewStandardRouter instantiates and returns an instance of a StandardRouter
@@ -41,7 +42,7 @@ func NewStandardRouter() *StandardRouter {
 	return &StandardRouter{
 		subscriptions: make(map[string][]MessageHandler),
 		aliases:       make(map[uint16]string),
-		debug:         NOOPLogger{},
+		debug:         log.NOOPLogger{},
 	}
 }
 
@@ -78,7 +79,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 	if pb.Properties.TopicAlias != nil {
 		r.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
-			//Register new alias
+			// Register new alias
 			r.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			r.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}
@@ -102,7 +103,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 
 // SetDebugLogger sets the logger l to be used for printing debug
 // information for the router
-func (r *StandardRouter) SetDebugLogger(l Logger) {
+func (r *StandardRouter) SetDebugLogger(l log.Logger) {
 	r.debug = l
 }
 
@@ -160,7 +161,7 @@ type SingleHandlerRouter struct {
 	sync.Mutex
 	aliases map[uint16]string
 	handler MessageHandler
-	debug   Logger
+	debug   log.Logger
 }
 
 // NewSingleHandlerRouter instantiates and returns an instance of a SingleHandlerRouter
@@ -168,7 +169,7 @@ func NewSingleHandlerRouter(h MessageHandler) *SingleHandlerRouter {
 	return &SingleHandlerRouter{
 		aliases: make(map[uint16]string),
 		handler: h,
-		debug:   NOOPLogger{},
+		debug:   log.NOOPLogger{},
 	}
 }
 
@@ -193,7 +194,7 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 	if pb.Properties.TopicAlias != nil {
 		s.debug.Println("message is using topic aliasing")
 		if pb.Topic != "" {
-			//Register new alias
+			// Register new alias
 			s.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
 			s.aliases[*pb.Properties.TopicAlias] = pb.Topic
 		}
@@ -207,6 +208,6 @@ func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
 
 // SetDebugLogger sets the logger l to be used for printing debug
 // information for the router
-func (s *SingleHandlerRouter) SetDebugLogger(l Logger) {
+func (s *SingleHandlerRouter) SetDebugLogger(l log.Logger) {
 	s.debug = l
 }

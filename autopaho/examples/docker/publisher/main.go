@@ -13,6 +13,9 @@ import (
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/log"
+	"github.com/eclipse/paho.golang/paho/session/state"
+	storefile "github.com/eclipse/paho.golang/paho/store/file"
 )
 
 // Connect to the broker and publish a message periodically
@@ -22,16 +25,34 @@ func main() {
 		panic(err)
 	}
 
+	var sessionState *state.State
+	if len(cfg.sessionFolder) == 0 {
+		sessionState = state.NewInMemory()
+	} else {
+		cliState, err := storefile.New(cfg.sessionFolder, "pubdemo_cli_", ".pkt")
+		if err != nil {
+			panic(err)
+		}
+		srvState, err := storefile.New(cfg.sessionFolder, "pubdemo_srv_", ".pkt")
+		if err != nil {
+			panic(err)
+		}
+		sessionState = state.New(cliState, srvState)
+	}
+
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls:        []*url.URL{cfg.serverURL},
-		KeepAlive:         cfg.keepAlive,
-		ConnectRetryDelay: cfg.connectRetryDelay,
-		OnConnectionUp:    func(*autopaho.ConnectionManager, *paho.Connack) { fmt.Println("mqtt connection up") },
-		OnConnectError:    func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
-		Debug:             paho.NOOPLogger{},
+		BrokerUrls:                    []*url.URL{cfg.serverURL},
+		KeepAlive:                     cfg.keepAlive,
+		CleanStartOnInitialConnection: false, // the default
+		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
+		ConnectRetryDelay:             cfg.connectRetryDelay,
+		OnConnectionUp:                func(*autopaho.ConnectionManager, *paho.Connack) { fmt.Println("mqtt connection up") },
+		OnConnectError:                func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
+		Debug:                         log.NOOPLogger{},
 		ClientConfig: paho.ClientConfig{
 			ClientID:      cfg.clientID,
-			OnClientError: func(err error) { fmt.Printf("server requested disconnect: %s\n", err) },
+			Session:       sessionState,
+			OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
 					fmt.Printf("server requested disconnect: %s\n", d.Properties.ReasonString)
@@ -81,7 +102,9 @@ func main() {
 				panic(err)
 			}
 
-			// Publish will block so we run it in a goRoutine
+			// Publish will block, so we run it in a goRoutine
+			// Note that we could use PublishViaQueue if we wanted to trust that the library will deliver (and, ideally,
+			// use a file-based queue and state).
 			go func(msg []byte) {
 				pr, err := cm.Publish(ctx, &paho.Publish{
 					QoS:     cfg.qos,

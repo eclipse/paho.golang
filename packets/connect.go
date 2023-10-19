@@ -85,7 +85,7 @@ func (c *Connect) UnpackFlags(b byte) {
 	c.UsernameFlag = 1&(b>>7) > 0
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connect) Unpack(r *bytes.Buffer) error {
 	var err error
 

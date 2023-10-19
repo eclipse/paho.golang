@@ -13,6 +13,8 @@ import (
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/eclipse/paho.golang/paho/session/state"
+	storefile "github.com/eclipse/paho.golang/paho/store/file"
 )
 
 func main() {
@@ -25,10 +27,27 @@ func main() {
 	h := NewHandler(cfg.writeToDisk, cfg.outputFileName, cfg.writeToStdOut)
 	defer h.Close()
 
+	var sessionState *state.State
+	if len(cfg.sessionFolder) == 0 {
+		sessionState = state.NewInMemory()
+	} else {
+		cliState, err := storefile.New(cfg.sessionFolder, "subdemo_cli_", ".pkt")
+		if err != nil {
+			panic(err)
+		}
+		srvState, err := storefile.New(cfg.sessionFolder, "subdemo_srv_", ".pkt")
+		if err != nil {
+			panic(err)
+		}
+		sessionState = state.New(cliState, srvState)
+	}
+
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls:        []*url.URL{cfg.serverURL},
-		KeepAlive:         cfg.keepAlive,
-		ConnectRetryDelay: cfg.connectRetryDelay,
+		BrokerUrls:                    []*url.URL{cfg.serverURL},
+		KeepAlive:                     cfg.keepAlive,
+		CleanStartOnInitialConnection: false, // the default
+		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
+		ConnectRetryDelay:             cfg.connectRetryDelay,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
@@ -44,10 +63,11 @@ func main() {
 		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		ClientConfig: paho.ClientConfig{
 			ClientID: cfg.clientID,
+			Session:  sessionState,
 			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
 				h.handle(m)
 			}),
-			OnClientError: func(err error) { fmt.Printf("server requested disconnect: %s\n", err) },
+			OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
 					fmt.Printf("server requested disconnect: %s\n", d.Properties.ReasonString)
