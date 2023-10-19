@@ -22,6 +22,8 @@ const (
 	envConnectRetryDelay    = "pubdemo_connectRetryDelay"    // milliseconds to delay between connection attempts
 	envDelayBetweenMessages = "pubdemo_delayBetweenMessages" // milliseconds delay between published messages
 
+	envSessionFolder = "pubdemo_sessionfolder" // folder used to persist the session state (if empty state will be held in RAM)
+
 	envPrintMessages = "pubdemo_printMessages" // If "true" then published messages will be written to the console
 	envDebug         = "pubdemo_debug"         // if "true" then the libraries will be instructed to print debug info
 )
@@ -36,6 +38,8 @@ type config struct {
 	keepAlive            uint16        // seconds between keepalive packets
 	connectRetryDelay    time.Duration // Period between connection attempts
 	delayBetweenMessages time.Duration // Period between publishing messages
+
+	sessionFolder string // path where session state should be stored (if blank this will be held in RAM)
 
 	printMessages bool // If true then published messages will be written to the console
 	debug         bool // autopaho and paho debug output requested
@@ -73,6 +77,8 @@ func getConfig() (config, error) {
 		return config{}, err
 	}
 	cfg.keepAlive = uint16(iKa)
+
+	cfg.sessionFolder = os.Getenv(envSessionFolder)
 
 	if cfg.connectRetryDelay, err = milliSecondsFromEnv(envConnectRetryDelay); err != nil {
 		return config{}, err

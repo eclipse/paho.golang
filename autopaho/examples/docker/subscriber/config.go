@@ -21,6 +21,8 @@ const (
 	envKeepAlive         = "subdemo_keepAlive"         // seconds between keepalive packets
 	envConnectRetryDelay = "subdemo_connectRetryDelay" // milliseconds to delay between connection attempts
 
+	envSessionFolder = "subdemo_sessionfolder" // folder used to persist the session state (if empty state will be held in RAM)
+
 	envWriteToStdOut = "subdemo_writeToStdout" // if "true" then received packets will be written stdout
 	envWriteToDisk   = "subdemo_writeToDisk"   // if "true" then received packets will be written to file
 	envOutputFile    = "subdemo_OutputFile"    // name of file to use if above is true
@@ -37,6 +39,8 @@ type config struct {
 
 	keepAlive         uint16        // seconds between keepalive packets
 	connectRetryDelay time.Duration // Period between connection attempts
+
+	sessionFolder string // path where session state should be stored (if blank this will be held in RAM)
 
 	writeToStdOut  bool   // If true received messages will be written to stdout
 	writeToDisk    bool   // if true received messages will be written to below file
@@ -82,6 +86,8 @@ func getConfig() (config, error) {
 		return config{}, err
 	}
 
+	cfg.sessionFolder = os.Getenv(envSessionFolder)
+
 	if cfg.writeToStdOut, err = booleanFromEnv(envWriteToStdOut); err != nil {
 		return config{}, err
 	}
@@ -99,7 +105,7 @@ func getConfig() (config, error) {
 	return cfg, nil
 }
 
-// stringFromEnv - Retrieves a string from the environment and ensures it is not blank (ort non-existent)
+// stringFromEnv - Retrieves a string from the environment and ensures it is not blank (or non-existent)
 func stringFromEnv(key string) (string, error) {
 	s := os.Getenv(key)
 	if len(s) == 0 {

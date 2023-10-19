@@ -11,19 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse/paho.golang/internal/basictestserver"
 	"github.com/eclipse/paho.golang/packets"
+	paholog "github.com/eclipse/paho.golang/paho/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/semaphore"
 )
 
 func TestNewClient(t *testing.T) {
 	c := NewClient(ClientConfig{})
 
 	require.NotNil(t, c)
-	require.NotNil(t, c.Persistence)
-	require.NotNil(t, c.MIDs)
+	require.NotNil(t, c.Session)
 	require.NotNil(t, c.Router)
 	require.NotNil(t, c.PingHandler)
 
@@ -45,7 +45,8 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClientConnect(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientConnect:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -57,13 +58,16 @@ func TestClientConnect(t *testing.T) {
 		},
 	})
 	go ts.Run()
-	defer ts.Stop()
+	defer func() {
+		ts.Stop()
+	}()
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "CONNECT: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	cp := &Connect{
 		KeepAlive:  30,
@@ -84,12 +88,11 @@ func TestClientConnect(t *testing.T) {
 	ca, err := c.Connect(context.Background(), cp)
 	require.Nil(t, err)
 	assert.Equal(t, uint8(0), ca.ReasonCode)
-
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestClientSubscribe(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientSubscribe:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.SUBACK, &packets.Suback{
 		Reasons:    []byte{1, 2, 0},
 		Properties: &packets.Properties{},
@@ -101,12 +104,21 @@ func TestClientSubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "SUBSCRIBE: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	s := &Subscribe{
 		Subscriptions: []SubscribeOptions{
@@ -124,7 +136,8 @@ func TestClientSubscribe(t *testing.T) {
 }
 
 func TestClientUnsubscribe(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientUnsubscribe:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.UNSUBACK, &packets.Unsuback{
 		Reasons:    []byte{0, 17},
 		Properties: &packets.Properties{},
@@ -136,12 +149,21 @@ func TestClientUnsubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "UNSUBSCRIBE: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	u := &Unsubscribe{
 		Topics: []string{
@@ -153,12 +175,11 @@ func TestClientUnsubscribe(t *testing.T) {
 	ua, err := c.Unsubscribe(context.Background(), u)
 	require.Nil(t, err)
 	assert.Equal(t, []byte{0, 17}, ua.Reasons)
-
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestClientPublishQoS0(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientPublishQoS0:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer"))
 	go ts.Run()
 	defer ts.Stop()
 
@@ -166,14 +187,21 @@ func TestClientPublishQoS0(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS0: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	p := &Publish{
 		Topic:   "test/0",
@@ -188,7 +216,8 @@ func TestClientPublishQoS0(t *testing.T) {
 }
 
 func TestClientPublishQoS1(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientPublishQoS1:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.PUBACK, &packets.Puback{
 		ReasonCode: packets.PubackSuccess,
 		Properties: &packets.Properties{},
@@ -200,14 +229,21 @@ func TestClientPublishQoS1(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS1: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	p := &Publish{
 		Topic:   "test/1",
@@ -218,12 +254,11 @@ func TestClientPublishQoS1(t *testing.T) {
 	pa, err := c.Publish(context.Background(), p)
 	require.Nil(t, err)
 	assert.Equal(t, uint8(0), pa.ReasonCode)
-
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestClientPublishQoS2(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientPublishQoS2:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.PUBREC, &packets.Pubrec{
 		ReasonCode: packets.PubrecSuccess,
 		Properties: &packets.Properties{},
@@ -239,14 +274,21 @@ func TestClientPublishQoS2(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "PUBLISHQOS2: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	p := &Publish{
 		Topic:   "test/2",
@@ -257,13 +299,13 @@ func TestClientPublishQoS2(t *testing.T) {
 	pr, err := c.Publish(context.Background(), p)
 	require.Nil(t, err)
 	assert.Equal(t, uint8(0), pr.ReasonCode)
-
-	time.Sleep(10 * time.Millisecond)
 }
 
 func TestClientReceiveQoS0(t *testing.T) {
+	clientLogger := paholog.NewTestLogger(t, "TestClientReceiveQoS0:")
+
 	rChan := make(chan struct{})
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	go ts.Run()
 	defer ts.Stop()
 
@@ -277,14 +319,21 @@ func TestClientReceiveQoS0(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS0: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
@@ -298,8 +347,10 @@ func TestClientReceiveQoS0(t *testing.T) {
 }
 
 func TestClientReceiveQoS1(t *testing.T) {
+	clientLogger := paholog.NewTestLogger(t, "TestClientReceiveQoS1:")
+
 	rChan := make(chan struct{})
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	go ts.Run()
 	defer ts.Stop()
 
@@ -313,20 +364,28 @@ func TestClientReceiveQoS1(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS1: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
-		Topic:   "test/1",
-		QoS:     1,
-		Payload: []byte("test payload"),
+		PacketID: 1,
+		Topic:    "test/1",
+		QoS:      1,
+		Payload:  []byte("test payload"),
 	})
 	require.NoError(t, err)
 
@@ -334,8 +393,10 @@ func TestClientReceiveQoS1(t *testing.T) {
 }
 
 func TestClientReceiveQoS2(t *testing.T) {
+	clientLogger := paholog.NewTestLogger(t, "TestClientReceiveQoS2:")
+
 	rChan := make(chan struct{})
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	go ts.Run()
 	defer ts.Stop()
 
@@ -349,20 +410,28 @@ func TestClientReceiveQoS2(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEQOS2: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
 
 	err := ts.SendPacket(&packets.Publish{
-		Topic:   "test/2",
-		QoS:     2,
-		Payload: []byte("test payload"),
+		PacketID: 1,
+		Topic:    "test/2",
+		QoS:      2,
+		Payload:  []byte("test payload"),
 	})
 	require.NoError(t, err)
 
@@ -370,7 +439,9 @@ func TestClientReceiveQoS2(t *testing.T) {
 }
 
 func TestClientReceiveAndAckInOrder(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ClientReceiveAndAckInOrder:")
+
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -399,8 +470,8 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 		}),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
-	t.Cleanup(c.close)
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	ctx := context.Background()
 	ca, err := c.Connect(ctx, &Connect{
@@ -448,7 +519,8 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 }
 
 func TestManualAcksInOrder(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "ManualAcksInOrder:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -479,8 +551,8 @@ func TestManualAcksInOrder(t *testing.T) {
 		require.NoError(t, c.Ack(p))
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
-	t.Cleanup(c.close)
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	ctx := context.Background()
 	ca, err := c.Connect(ctx, &Connect{
@@ -535,8 +607,9 @@ func TestManualAcksInOrder(t *testing.T) {
 }
 
 func TestReceiveServerDisconnect(t *testing.T) {
+	clientLogger := paholog.NewTestLogger(t, "ServerDisconnect:")
 	rChan := make(chan struct{})
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	go ts.Run()
 	defer ts.Stop()
 
@@ -549,14 +622,21 @@ func TestReceiveServerDisconnect(t *testing.T) {
 		},
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "SERVERDISCONNECT: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	err := ts.SendPacket(&packets.Disconnect{
 		ReasonCode: packets.DisconnectServerShuttingDown,
@@ -570,7 +650,8 @@ func TestReceiveServerDisconnect(t *testing.T) {
 }
 
 func TestAuthenticate(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "Authenticate:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.AUTH, &packets.Auth{
 		ReasonCode: packets.AuthSuccess,
 	})
@@ -582,14 +663,21 @@ func TestAuthenticate(t *testing.T) {
 		AuthHandler: &fakeAuth{},
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATE: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
-	c.serverInflight = semaphore.NewWeighted(10000)
-	c.clientInflight = semaphore.NewWeighted(10000)
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
+	c.workers.Add(2)
+	go func() {
+		defer c.workers.Done()
+		c.incoming()
+	}()
+	go func() {
+		defer c.workers.Done()
+		c.PingHandler.Start(c.Conn, 30*time.Second)
+	}()
+	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
 
 	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cf()
@@ -649,7 +737,9 @@ func TestAuthenticateOnConnect(t *testing.T) {
 			wg.Done()
 		},
 	}
-	ts := newTestServer()
+
+	clientLogger := paholog.NewTestLogger(t, "AuthenticateOnConnect:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Auth{
 		ReasonCode: packets.AuthContinueAuthentication,
 		Properties: &packets.Properties{
@@ -672,7 +762,8 @@ func TestAuthenticateOnConnect(t *testing.T) {
 		AuthHandler: &auther,
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "AUTHENTICATEONCONNECT: ", log.LstdFlags))
+	defer c.close()
+	c.SetDebugLogger(clientLogger)
 
 	cp := &Connect{
 		KeepAlive:  30,
@@ -693,7 +784,8 @@ func TestAuthenticateOnConnect(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
-	ts := newTestServer()
+	serverLogger := paholog.NewTestLogger(t, "TestServer:")
+	ts := basictestserver.New(serverLogger)
 	go ts.Run()
 
 	c := NewClient(ClientConfig{
@@ -714,7 +806,7 @@ func TestCleanup(t *testing.T) {
 
 	// verify that it's possible to try again
 	ts.Stop()
-	ts = newTestServer()
+	ts = basictestserver.New(serverLogger)
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -746,7 +838,8 @@ func TestCleanup(t *testing.T) {
 }
 
 func TestDisconnect(t *testing.T) {
-	ts := newTestServer()
+	clientLogger := paholog.NewTestLogger(t, "Disconnect:")
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -764,8 +857,8 @@ func TestDisconnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	c.SetDebugLogger(log.New(os.Stderr, "RECEIVEORDER: ", log.LstdFlags))
-	t.Cleanup(c.close)
+	c.SetDebugLogger(clientLogger)
+	defer c.close()
 
 	ctx := context.Background()
 	ca, err := c.Connect(ctx, &Connect{
@@ -789,7 +882,7 @@ func TestDisconnect(t *testing.T) {
 }
 
 func TestCloseDeadlock(t *testing.T) {
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -837,7 +930,7 @@ func TestCloseDeadlock(t *testing.T) {
 }
 
 func TestSendOnClosedChannel(t *testing.T) {
-	ts := newTestServer()
+	ts := basictestserver.New(paholog.NewTestLogger(t, "TestServer:"))
 	ts.SetResponse(packets.CONNACK, &packets.Connack{
 		ReasonCode:     0,
 		SessionPresent: false,
@@ -903,3 +996,17 @@ func isChannelClosed(ch chan struct{}) (closed bool) {
 	ch <- struct{}{}
 	return
 }
+
+// fakeAuth implements the Auther interface to test client.AuthHandler
+type fakeAuth struct{}
+
+func (f *fakeAuth) Authenticate(a *Auth) *Auth {
+	return &Auth{
+		Properties: &AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	}
+}
+
+func (f *fakeAuth) Authenticated() {}

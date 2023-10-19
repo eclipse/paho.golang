@@ -34,7 +34,7 @@ const (
 	SubackWildcardsubscriptionsnotsupported   = 0xA2
 )
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (s *Suback) Unpack(r *bytes.Buffer) error {
 	var err error
 	s.PacketID, err = readUint16(r)

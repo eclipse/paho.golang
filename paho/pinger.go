@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
+	"github.com/eclipse/paho.golang/paho/log"
 )
 
 // PingFailHandler is a type for the function that is invoked
@@ -31,7 +32,7 @@ type Pinger interface {
 	Start(net.Conn, time.Duration)
 	Stop()
 	PingResp()
-	SetDebug(Logger)
+	SetDebug(log.Logger)
 }
 
 // PingHandler is the library provided default Pinger
@@ -42,7 +43,7 @@ type PingHandler struct {
 	stop            chan struct{}
 	pingFailHandler PingFailHandler
 	pingOutstanding int32
-	debug           Logger
+	debug           log.Logger
 }
 
 // DefaultPingerWithCustomFailHandler returns an instance of the
@@ -52,7 +53,7 @@ type PingHandler struct {
 func DefaultPingerWithCustomFailHandler(pfh PingFailHandler) *PingHandler {
 	return &PingHandler{
 		pingFailHandler: pfh,
-		debug:           NOOPLogger{},
+		debug:           log.NOOPLogger{},
 	}
 }
 
@@ -72,11 +73,11 @@ func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
 		case <-checkTicker.C:
 			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
 				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
-				//ping outstanding and not reset in 1.5 times ping timer
+				// ping outstanding and not reset in 1.5 times ping timer
 				return
 			}
 			if time.Since(p.lastPing) >= pt {
-				//time to send a ping
+				// time to send a ping
 				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
 					if p.pingFailHandler != nil {
 						p.pingFailHandler(err)
@@ -102,7 +103,7 @@ func (p *PingHandler) Stop() {
 	p.debug.Println("pingHandler stopping")
 	select {
 	case <-p.stop:
-		//Already stopped, do nothing
+		// Already stopped, do nothing
 	default:
 		close(p.stop)
 	}
@@ -117,6 +118,6 @@ func (p *PingHandler) PingResp() {
 
 // SetDebug sets the logger l to be used for printing debug
 // information for the pinger
-func (p *PingHandler) SetDebug(l Logger) {
+func (p *PingHandler) SetDebug(l log.Logger) {
 	p.debug = l
 }

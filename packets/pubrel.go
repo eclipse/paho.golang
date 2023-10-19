@@ -28,7 +28,7 @@ func (p *Pubrel) String() string {
 	return b.String()
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (p *Pubrel) Unpack(r *bytes.Buffer) error {
 	var err error
 	success := r.Len() == 2

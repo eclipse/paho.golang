@@ -43,7 +43,7 @@ func (c *Connack) String() string {
 	return fmt.Sprintf("CONNACK: ReasonCode:%d SessionPresent:%t\nProperties:\n%s", c.ReasonCode, c.SessionPresent, c.Properties)
 }
 
-//Unpack is the implementation of the interface required function for a packet
+// Unpack is the implementation of the interface required function for a packet
 func (c *Connack) Unpack(r *bytes.Buffer) error {
 	connackFlags, err := r.ReadByte()
 	if err != nil {

@@ -3,110 +3,150 @@ AutoPaho
 
 AutoPaho has a number of aims:
 
-* Provide an easy-to-use MQTT v5 client that provides commonly requested functionality (e.g. connection, automatic reconnection).
+* Provide an easy-to-use MQTT v5 client that provides commonly requested functionality (e.g. connection, automatic reconnection, message queueing).
 * Demonstrate the use of `paho.golang/paho`.
 * Enable us to smoke test `paho.golang/paho` features (ensuring they are they usable in a real world situation)
 
 ## Basic Usage
 
-```Go
-package main
+The following code demonstrates basic usage; the full code is available under `examples/basics`:
 
-import (
-	"context"
-	"fmt"
-	"net/url"
-	"os"
-	"os/signal"
-	"syscall"
+```go
+ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+defer stop()
 
-	"github.com/eclipse/paho.golang/autopaho"
-	"github.com/eclipse/paho.golang/paho"
-)
-
-func main() {
-	// App will run until cancelled by user (e.g. ctrl-c)
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	u, err := url.Parse("mqtt://test.mosquitto.org:1883")
-	if err != nil {
-		panic(err)
-	}
-
-	cliCfg := autopaho.ClientConfig{
-		BrokerUrls: []*url.URL{u},
-		KeepAlive:  20, // Keepalive message should be sent every 20 seconds
-		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
-			fmt.Println("mqtt connection up")
-			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
-				Subscriptions: []paho.SubscribeOptions{
-					{Topic: "testTopic", QoS: 1},
-				},
-			}); err != nil {
-				fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received!\n", err)
-			}
-			fmt.Println("mqtt subscription made")
-		},
-		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
-		// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
-		ClientConfig: paho.ClientConfig{
-			ClientID: "TestClient",
-			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
-				fmt.Printf("received message on topic %s; body: %s (retain: %t)\n", m.Topic, m.Payload, m.Retain)
-			}),
-			OnClientError: func(err error) { fmt.Printf("server requested disconnect: %s\n", err) },
-			OnServerDisconnect: func(d *paho.Disconnect) {
-				if d.Properties != nil {
-					fmt.Printf("server requested disconnect: %s\n", d.Properties.ReasonString)
-				} else {
-					fmt.Printf("server requested disconnect; reason code: %d\n", d.ReasonCode)
-				}
-			},
-		},
-	}
-
-	c, err := autopaho.NewConnection(ctx, cliCfg)
-	if err != nil {
-		panic(err)
-	}
-	// Wait for the connection to come up
-	if err = c.AwaitConnection(ctx); err != nil {
-		panic(err)
-	}
-	// Publish a test message
-	if _, err = c.Publish(ctx, &paho.Publish{
-		QoS:     1,
-		Topic:   "testTopic",
-		Payload: []byte("TestMessage"),
-	}); err != nil {
-		panic(err)
-	}
-
-	<-ctx.Done() // Wait for user to trigger exit
-	fmt.Println("signal caught - exiting")
+// We will connect to the Eclipse test broker (note that you may see messages that other users publish)
+u, err := url.Parse("mqtt://mqtt.eclipseprojects.io:1883")
+if err != nil {
+	panic(err)
 }
+
+cliCfg := autopaho.ClientConfig{
+	BrokerUrls: []*url.URL{u},
+	KeepAlive:  20, // Keepalive message should be sent every 20 seconds
+	// CleanStartOnInitialConnection defaults to false. Setting this to true will clear the session on the first connection.
+	CleanStartOnInitialConnection: false,
+	// SessionExpiryInterval - Seconds that a session will survive after disconnection.
+	// It is important to set this because otherwise, any queued messages will be lost if the connection drops and
+	// the broker will not queue messages while it is down. The specific setting will depend upon your needs
+	// (60 = 1 minute, 3600 = 1 hour, 86400 = one day, 0xFFFFFFFE = 136 years, 0xFFFFFFFF = don't expire)
+	SessionExpiryInterval: 60,
+	OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
+		fmt.Println("mqtt connection up")
+		// Subscribing in the OnConnectionUp callback is recommended (ensures the subscription is reestablished if
+		// the connection drops)
+		if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+			Subscriptions: []paho.SubscribeOptions{
+				{Topic: topic, QoS: 1},
+			},
+		}); err != nil {
+			fmt.Printf("failed to subscribe (%s). This is likely to mean no messages will be received.", err)
+		}
+		fmt.Println("mqtt subscription made")
+	},
+	OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
+	// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
+	ClientConfig: paho.ClientConfig{
+		// If you are using QOS 1/2, then it's important to specify a client id (which must be unique)
+		ClientID: clientID,
+		// The Router will receive any inbound messages (SingleHandlerRouter ignores the topic and always calls the function)
+		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+			fmt.Printf("received message on topic %s; body: %s (retain: %t)\n", m.Topic, m.Payload, m.Retain)
+		}),
+		OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },
+		OnServerDisconnect: func(d *paho.Disconnect) {
+			if d.Properties != nil {
+				fmt.Printf("server requested disconnect: %s\n", d.Properties.ReasonString)
+			} else {
+				fmt.Printf("server requested disconnect; reason code: %d\n", d.ReasonCode)
+			}
+		},
+	},
+}
+
+c, err := autopaho.NewConnection(ctx, cliCfg) // starts process; will reconnect until context cancelled
+if err != nil {
+	panic(err)
+}
+// Wait for the connection to come up
+if err = c.AwaitConnection(ctx); err != nil {
+	panic(err)
+}
+
+ticker := time.NewTicker(time.Second)
+msgCount := 0
+defer ticker.Stop()
+for {
+	select {
+	case <-ticker.C:
+		msgCount++
+		// Publish a test message (use PublishViaQueue if you don't want to wait for a response)
+		if _, err = c.Publish(ctx, &paho.Publish{
+			QoS:     1,
+			Topic:   topic,
+			Payload: []byte("TestMessage: " + strconv.Itoa(msgCount)),
+		}); err != nil {
+			if ctx.Err() != nil {
+				panic(err) // Publish will exit when context cancelled or if something went wrong
+			}
+		}
+		continue
+	case <-ctx.Done():
+	}
+	break
+}
+
+fmt.Println("signal caught - exiting")
+<-c.Done() // Wait for clean shutdown (cancelling the context triggered the shutdown)
 ```
 
 ## QOS 1 & 2
 
-`paho.golang/paho` supports QOS 1 & 2 but does not maintain a ["Session State" ](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901230). This means that QOS1/2 messages will be sent but no attempt will be made to resend them if there is an issue.
+QOS 1 & 2 provide assurances that messages will be delivered. To implement this a [session state](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901230)
+is required that holds information on messages that have not been fully acknowledged. By default `autopaho` holds this 
+state in memory meaning that messages will not be lost following a reconnection, but may be lost if the program is 
+restarted (a file-based store can be used to avoid this).   
 
-## Work in progress
+A range of settings impact message delivery; if you wand guaranteed delivery, then remember to:
 
-See [this issue](https://github.com/eclipse/paho.golang/issues/25) for more info (currently nearing completion).
+* Use a unique, client ID (you need to ensue any subsequent connections use the same ID)
+* Configure `CleanStartOnInitialConnection` and `SessionExpiryInterval` appropriately (e.g. `false`, `600`).
+* Use file-based persistence if you wish the session to survive an application restart
+* Specify QOS 1 or 2 when publishing/subscribing.
 
-Use case: I want to regularly publish messages and leave it to autopaho to ensure they are delivered (regardless of the connection state).
+When subscribing at QOS1/2:
+* Remember that messages will not be queued until after the initial `Subscribe` call.
+* If you subscribed previously (and the session is live) then expect to receive messages upon connection (you do not need
+to call `Subscribe` when reconnecting; however this is recommended in case the session was lost).
 
-Acceptance tests:
-   * Publish a message before connection is established; it should be queued and delivered when connection comes up.
-   * Connection drops and messages are published whilst reconnection is in progress. They should be queued and delivered 
-     when connection is available.
-   * Publish messages at a rate in excess of Receive Maximum; they should be queued and sent, in order, when possible.
-   * Application restarts during any of the above - queued messages are sent out when connection comes up.
+`example/docker` provides a demonstration of how this can work. You can confirm this yourself using two terminal windows:
 
-Desired features:
-   * Fire and forget - async publish; we trust the library to deliver the message so once its in the store the client can forget about it.
-   * Minimal RAM use - the connection may be down for a long time and we may not have much ram. So messages should be on disk (ideally with
-     no trace of them in RAM)
+| Terminal1                 | Terminal2                                                                                                 |
+|---------------------------|-----------------------------------------------------------------------------------------------------------|
+| `docker compose up -d`    |                                                                                                           |
+|                           | `docker compose logs --follow`                                                                            |
+|                           | Wait until you see the subscriber receiving messages (e.g. `docker-sub-1  received message: {"Count":1}`) |
+| `docker compose stop sub` |                                                                                                           |
+| Wait 20 seconds           |                                                                                                           |
+| `docker compose up -d`    |                                                                                                           |
+|                           | Verify that `sub` received all messages despite the stop/start.                                           |
+
+Note: The logs can be easier fo follow if you comment out the `log_type all` in `mosquitto.conf`.
+
+## Queue
+
+When publishing a message, there are a number of things that can go wrong; for example:
+* The connection to the broker may drop (or not have even come up before your initial message is ready)
+* The application might be restarted (but you still want messages previously published to be delivered)
+* `ConnectionManager.Publish` may timeout because you are attempting to publish a lot of messages in a short space of time.
+
+With MQTT v3.1 this was generally handled by adding messages to the session; meaning they would be retried if the 
+connection droped and was reestablished. MQTT v5 introduces a [Receive Maximum](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901083)
+which limits the number of messages that can be in flight (and, hence, in the session).
+
+`ConnectionManager.PublishViaQueue` provides a solution; messages passed to this function are added to a queue and 
+transmitted when possible. By default, this queue is held in memory but you can use an alternate `ClientConfig.Queue`
+(e.g. `queue/disk`) if you wish the queue to survive an application restart.
+
+See `examples/queue`.
 

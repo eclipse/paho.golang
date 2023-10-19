@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse/paho.golang/internal/testserver"
+	paholog "github.com/eclipse/paho.golang/paho/log"
 	"go.uber.org/goleak"
 
-	"github.com/eclipse/paho.golang/autopaho/internal/testserver"
 	"github.com/eclipse/paho.golang/paho"
 )
 
@@ -33,17 +34,125 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+// TestConnect confirms that the computed CONNECT packet is as anticipated
+func TestConnect(t *testing.T) {
+
+}
+
+// TestDisconnect confirms that Disconnect closes the connection and exits cleanly
+func TestDisconnect(t *testing.T) {
+	t.Parallel()
+	broker, _ := url.Parse(dummyURL)
+	serverLogger := paholog.NewTestLogger(t, "testServer:")
+	logger := paholog.NewTestLogger(t, "test:")
+
+	ts := testserver.New(serverLogger)
+
+	type tsConnUpMsg struct {
+		cancelFn func()        // Function to cancel test broker context
+		done     chan struct{} // Will be closed when the test broker has disconnected (and shutdown)
+	}
+	var tsDone chan struct{}               // Set on AttemptConnection and closed when that test server connection is done
+	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test broker connection is up
+	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
+
+	errCh := make(chan error, 2)
+	config := ClientConfig{
+		BrokerUrls:        []*url.URL{broker},
+		KeepAlive:         60,
+		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
+		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
+			ctx, cancel := context.WithCancel(ctx)
+			conn, done, err := ts.Connect(ctx)
+			if err == nil { // The above may fail if attempted too quickly (before disconnect processed)
+				tsConnUpChan <- tsConnUpMsg{cancelFn: cancel, done: done}
+			} else {
+				cancel()
+			}
+			tsDone = done
+			return conn, err
+		},
+		OnConnectionUp: func(*ConnectionManager, *paho.Connack) { pahoConnUpChan <- struct{}{} },
+		Debug:          logger,
+		PahoDebug:      logger,
+		PahoErrors:     logger,
+		ClientConfig: paho.ClientConfig{
+			ClientID: "test",
+			OnServerDisconnect: func(disconnect *paho.Disconnect) {
+				errCh <- fmt.Errorf("disconnect received: %v", disconnect)
+			},
+			OnClientError: func(err error) {
+				errCh <- err
+			},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cm, err := NewConnection(ctx, config)
+	if err != nil {
+		t.Fatalf("expected NewConnection success: %s", err)
+	}
+
+	var connUpMsg tsConnUpMsg
+	select {
+	case connUpMsg = <-tsConnUpChan:
+		defer connUpMsg.cancelFn()
+	case <-time.After(shortDelay):
+		t.Fatal("timeout awaiting initial connection request")
+	}
+	select {
+	case <-pahoConnUpChan:
+	case <-time.After(shortDelay):
+		t.Fatal("timeout awaiting connection up")
+	}
+
+	if !ts.Connected() {
+		t.Fatal("test server should be connected")
+	}
+
+	// Disconnect
+	disconnectErr := make(chan error)
+	go func() {
+		disconnectErr <- cm.Disconnect(ctx)
+	}()
+	select {
+	case err = <-disconnectErr:
+		if err != nil {
+			t.Fatalf("Disconnect returned error: %s", err)
+		}
+	case <-time.After(longerDelay):
+		t.Fatal("Disconnect should return relatively quickly")
+	}
+
+	// Connection manager should be Done
+	select {
+	case <-cm.Done():
+	case <-time.After(shortDelay):
+		t.Fatal("connection manager should be done after Disconnect Called")
+	}
+
+	// The test server should have picked up the dropped connection
+	select {
+	case <-tsDone:
+	case <-time.After(shortDelay):
+		t.Fatal("test server did not shutdown within expected time")
+	}
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("callbacks should not be called on Disconnect: %s", err)
+	default:
+	}
+}
+
 // TestReconnect confirms that the connection is automatically re-established when lost
 func TestReconnect(t *testing.T) {
+	t.Parallel()
 	broker, _ := url.Parse(dummyURL)
-	serverLogger := &testLog{l: t, prefix: "testServer:"}
-	logger := &testLog{l: t, prefix: "test:"}
-	defer func() {
-		// Prevent any logging after completion. Unfortunately, there is currently no way to know if paho.Client
-		// has fully shutdown. As such, messages may be logged after shutdown (which will result in a panic).
-		serverLogger.Stop()
-		logger.Stop()
-	}()
+	serverLogger := paholog.NewTestLogger(t, "testServer:")
+	logger := paholog.NewTestLogger(t, "test:")
 
 	ts := testserver.New(serverLogger)
 
@@ -137,25 +246,14 @@ func TestReconnect(t *testing.T) {
 	case <-time.After(shortDelay):
 		t.Fatal("timeout awaiting connection manager shutdown")
 	}
-
-	// Prevent any future logging - unfortunately, there is currently no way to know if paho.Client has completely
-	// shutdown. As such, messages may be logged after shutdown (which will result in a panic).
-	serverLogger.Stop()
-	logger.Stop()
 }
 
 // TestBasicPubSub performs pub/sub operations at each QOS level
 func TestBasicPubSub(t *testing.T) {
+	t.Parallel()
 	broker, _ := url.Parse(dummyURL)
-	serverLogger := &testLog{l: t, prefix: "testServer:"}
-	logger := &testLog{l: t, prefix: "test:"}
-	defer func() {
-		// Prevent any logging after completion. Unfortunately, there is currently no way to know if paho.Client
-		// has fully shutdown. As such, messages may be logged after shutdown (which will result in a panic).
-		serverLogger.Stop()
-		logger.Stop()
-	}()
-
+	serverLogger := paholog.NewTestLogger(t, "testServer:")
+	logger := paholog.NewTestLogger(t, "test:")
 	ts := testserver.New(serverLogger)
 
 	type tsConnUpMsg struct {
@@ -303,11 +401,11 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	broker, _ := url.Parse(dummyURL)
 
 	config := ClientConfig{
-		BrokerUrls:        []*url.URL{broker},
-		KeepAlive:         5,
-		ConnectRetryDelay: 5 * time.Second,
-		ConnectTimeout:    5 * time.Second,
-
+		BrokerUrls:                    []*url.URL{broker},
+		KeepAlive:                     5,
+		ConnectRetryDelay:             5 * time.Second,
+		ConnectTimeout:                5 * time.Second,
+		CleanStartOnInitialConnection: true, // Should set Clean Start flag on first connection attempt
 		// extends the lower-level paho.ClientConfig
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
@@ -315,8 +413,11 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	}
 
 	// Validate initial state
-	cp := config.buildConnectPacket()
+	cp := config.buildConnectPacket(true)
 
+	if !cp.CleanStart {
+		t.Errorf("Expected Clean Start to be true")
+	}
 	if cp.WillMessage != nil {
 		t.Errorf("Expected empty Will message, got: %v", cp.WillMessage)
 	}
@@ -333,7 +434,10 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	config.SetUsernamePassword("testuser", []byte("testpassword"))
 	config.SetWillMessage(fmt.Sprintf("client/%s/state", config.ClientID), []byte("disconnected"), 1, true)
 
-	cp = config.buildConnectPacket()
+	cp = config.buildConnectPacket(false)
+	if cp.CleanStart {
+		t.Errorf("Expected Clean Start to be false")
+	}
 
 	if cp.UsernameFlag == false || cp.Username != "testuser" {
 		t.Errorf("Expected a username, got: flag=%v username=%v", cp.UsernameFlag, cp.Username)
@@ -372,51 +476,10 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 		return c
 	})
 
-	cp = config.buildConnectPacket()
+	cp = config.buildConnectPacket(false)
 
 	if *(cp.WillProperties.WillDelayInterval) != 200 { // verifies the override
 		t.Errorf("Will message Delay Interval did not match expected [200]: found [%v]", *(cp.Properties.WillDelayInterval))
 	}
 
-}
-
-// testLogger contains the logging functions provided by testing.T
-type testLogger interface {
-	Log(args ...interface{})
-	Logf(format string, args ...interface{})
-}
-
-// The testLog type is an adapter to allow the use of testing.T as a paho.Logger.
-// With this implementation, log messages will only be output when a test fails (and will be associated with the test).
-type testLog struct {
-	sync.Mutex
-	l      testLogger
-	prefix string
-}
-
-// Println prints a line to the log
-// Println its arguments in the test log (only printed if the test files or appropriate arguments passed to go test).
-func (t *testLog) Println(v ...interface{}) {
-	t.Lock()
-	defer t.Unlock()
-	if t.l != nil {
-		t.l.Log(append([]interface{}{t.prefix}, v...)...)
-	}
-}
-
-// Printf formats its arguments according to the format, analogous to fmt.Printf, and
-// records the text in the test log (only printed if the test files or appropriate arguments passed to go test).
-func (t *testLog) Printf(format string, v ...interface{}) {
-	t.Lock()
-	defer t.Unlock()
-	if t.l != nil {
-		t.l.Logf(t.prefix+format, v...)
-	}
-}
-
-// Stop prevents future logging
-func (t *testLog) Stop() {
-	t.Lock()
-	defer t.Unlock()
-	t.l = nil
 }
