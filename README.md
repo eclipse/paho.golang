@@ -161,11 +161,19 @@ This client does not enforce the [Receive Maximum](https://docs.oasis-open.org/m
 for messages being received from the server. This is unlikely to be an issue for most users because most servers should 
 honour the limit (if we were checking for this situation, we would need to drop the connection if it was detected).
 
-The client does honor the [Receive Maximum](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901083)
-received from the server (indicating how many inflight publishes the client can initiate to the server). However, there 
-is a limitation; we assume that the Receive Maximum will not change upon reconnection (it seems fairly unlikely that the 
-value will change but its possible). This is fixable, but requires some thought and a review of 
-[the spec](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901251).
+The client does honor the [Receive Maximum](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901083) 
+received from the server (indicating how many inflight publishes the client can initiate to the server). However, there
+is a limitation; consider the following situation:
+
+1. Connect and server advises receive maximum is 20
+2. Publish 20 QOS2 messages 
+3. Connection drops before any messages are acknowledged (so there are 20 messages in the session state)
+4. Reconnect and server advises receive maximum is 10
+
+In this case the client will exceed receive maximum when retransmitting the messages (I'm have not seen this actually 
+happen!). The client should delay resending until there are slots available (but note that inflight messages may still 
+exceed receive maximum). This is fixable, but requires some thought and a review of 
+[the spec](https://docs.oasis-open.org/mqtt/mqtt/v5.0/os/mqtt-v5.0-os.html#_Toc3901251). 
 
 ### ACK() Unpredicatable results if called after connection loss
 

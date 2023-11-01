@@ -13,7 +13,6 @@ import (
 	paholog "github.com/eclipse/paho.golang/paho/log"
 	"github.com/eclipse/paho.golang/paho/session"
 	"github.com/eclipse/paho.golang/paho/store/memory"
-	"golang.org/x/sync/semaphore"
 )
 
 // The Session State, as per the MQTT spec, contains:
@@ -93,15 +92,8 @@ type State struct {
 	serverPackets map[uint16]byte // The last packet received from the server with this ID (cleared when the transaction is complete)
 	serverStore   storer          // Used to store session state that survives connection loss
 
-	// ensuring there are not too many messages in flight is a bit tricky; we really need to do it here because upon
-	// connection thee may already be messages in flight (and we need to resend the PUBLISH or PUBREL's). The challenge
-	// then becomes working out how the client communicates with this (ideally it should be able to check if there is
-	// a slot and, if not, place the message in a queue for later delivery).
-	// Have to just assume that the CONACK will never contain a "Receive Maximum" lower than the number of messages
-	// currently in flight (it would be impossible to comply with this).
-	// For now inflight is created when we first connect and is not updated on subsequent connections (this should
-	// probably be addressed at some point but should be fine in most circumstances).
-	inflight *semaphore.Weighted
+	// The number of messages in flight needs to be limited, as per receive maximum received from the server.
+	inflight *sendQuota
 
 	debug  paholog.Logger
 	errors paholog.Logger
@@ -180,15 +172,24 @@ func (s *State) ConAckReceived(conn io.Writer, cp *packets.Connect, ca *packets.
 		s.sessionExpiryInterval = 0
 	}
 
-	// For now, inflight is created when we first connect and is not updated on subsequent connections (this should
-	// probably be addressed at some point but should be fine in most circumstances because I believe it's unlikely to
-	// change).
-	// We also use this as a trigger to load the session state
-	if s.inflight == nil {
-		if err := s.initSession(ca); err != nil {
-			return fmt.Errorf("failed to initialise session: %w", err)
+	// If clientPackets already exists, we re-use it so that the responseChan survives the reconnection
+	// the map will be populated/repopulated when we retransmit the messages.
+	if s.clientPackets == nil {
+		s.clientPackets = make(map[uint16]clientGenerated) // This will be populated whilst packets are resent
+	}
+
+	if s.serverPackets == nil {
+		if err := s.loadServerSession(ca); err != nil {
+			return fmt.Errorf("failed to server session: %w", err)
 		}
 	}
+
+	// As per section 4.9 "The send quota and Receive Maximum value are not preserved across Network Connections"
+	recvMax := uint16(65535) // Default as per MQTT spec
+	if ca.Properties != nil && ca.Properties.ReceiveMaximum != nil {
+		recvMax = *ca.Properties.ReceiveMaximum
+	}
+	s.inflight = newSendQuota(recvMax)
 
 	// Now we need to resend any packets in the store; this must happen in order, the simplest approach is to complete
 	// the sending them before returning.
@@ -204,7 +205,16 @@ func (s *State) ConAckReceived(conn io.Writer, cp *packets.Connect, ca *packets.
 			s.errors.Printf("failed to load packet %d from store: %s", id, err)
 			continue
 		}
-		// DUP needs to be set if resending a PUBLISH (but there is no real need to fully parse the message, so we don't)
+
+		// The messages being retransmitted form part of the "send quota"; we currently add this without blocking
+		// meaning that inflight messages may exceed Receive Maximum if this has decreased since the last connection.
+		// This means that we should really hold off resending PUBLISH messages in excess of Receive Maximum until
+		// acknowledgment of previous messages is received. However, this appears to be a fairly unusual situation
+		// (receive maximum rarely changes between connections) and implementing a fix will increase complexity.
+		// TODO: Honor Receive Maximum when retransmitting messages.
+		s.inflight.Retransmit() // This will never block (but is needed to block new messages)
+
+		// DUP needs to be set when resending PUBLISH (but there is no real need to fully parse the message, so we don't)
 		fixedHeader := make([]byte, 2)
 		_, err = io.ReadFull(r, fixedHeader)
 		if err != nil {
@@ -237,12 +247,10 @@ func (s *State) ConAckReceived(conn io.Writer, cp *packets.Connect, ca *packets.
 	return nil
 }
 
-// initSession should be called once, when the first connection is established.
-// It configures data structures and loads information from the store as needed.
+// loadServerSession should be called once, when the first connection is established.
+// It loads the server session state from the store.
 // The caller must hold a lock on s.mu
-func (s *State) initSession(ca *packets.Connack) error {
-	s.clientPackets = make(map[uint16]clientGenerated) // This will be populated whilst packets are resent
-
+func (s *State) loadServerSession(ca *packets.Connack) error {
 	s.serverPackets = make(map[uint16]byte)
 	ids, err := s.serverStore.List()
 	if err != nil {
@@ -270,30 +278,6 @@ func (s *State) initSession(ca *packets.Connack) error {
 		default:
 			return fmt.Errorf("unexpected packet type %d (for packet identifier %d) in server store", packetType, id)
 		}
-	}
-	ids, err = s.serverStore.List()
-
-	// Configure the semaphore that limits messages in flight
-	recvMax := uint16(65535) // Default as per MQTT spec
-	if ca.Properties != nil && ca.Properties.ReceiveMaximum != nil {
-		recvMax = *ca.Properties.ReceiveMaximum
-	}
-
-	// Not sure how to deal with the situation where there are more inflight messages in the session than the
-	// broker permits - suspect this will probably never happen, but it cannot be ruled out
-	inFlight := uint16(len(s.clientPackets))
-	if inFlight > recvMax {
-		s.errors.Printf("RecieveMaximum from broker (%d) is less than the messages currently in flight (%d)", recvMax, inFlight)
-		recvMax = inFlight
-	}
-	s.inflight = semaphore.NewWeighted(int64(recvMax))
-
-	if inFlight > 0 {
-		s.debug.Printf("acquiring semaphore with %d weight", inFlight)
-		if err := s.inflight.Acquire(context.Background(), int64(inFlight)); err != nil { // should never block or error
-			s.errors.Println("Failed to acquire semaphore whilst handling CONACK", err)
-		}
-		s.debug.Printf("acquired semaphore with %d weight", inFlight)
 	}
 	return nil
 }
@@ -355,7 +339,7 @@ func (s *State) AddToSession(ctx context.Context, packet session.Packet, resp ch
 
 	// Ensure only "RECEIVE MAXIMUM" PUBLISH transactions are in flight at any time
 	if pt == packets.PUBLISH {
-		if err := s.inflight.Acquire(ctx, 1); err != nil {
+		if err := s.inflight.Acquire(ctx); err != nil {
 			if s.connCtx.Err() != nil {
 				return session.ErrNoConnection
 			}
@@ -371,7 +355,9 @@ func (s *State) AddToSession(ctx context.Context, packet session.Packet, resp ch
 	packetID, err := s.allocateNextPacketId(pt, resp)
 	if err != nil {
 		if pt == packets.PUBLISH {
-			s.inflight.Release(1) // Free slot allocated above
+			if qErr := s.inflight.Release(); qErr != nil {
+				s.errors.Printf("quota release due to packet id issue: %s", qErr)
+			}
 		}
 		return err
 	}
@@ -381,7 +367,9 @@ func (s *State) AddToSession(ctx context.Context, packet session.Packet, resp ch
 			s.mu.Lock()
 			delete(s.clientPackets, packetID)
 			s.mu.Unlock()
-			s.inflight.Release(1)   // Free slot allocated above
+			if qErr := s.inflight.Release(); qErr != nil {
+				s.errors.Printf("quota release due to store issue: %s", qErr)
+			}
 			packet.SetIdentifier(0) // ensure the Message identifier is not used
 			return err
 		}
@@ -397,8 +385,14 @@ func (s *State) endClientGenerated(packetID uint16, recv *packets.ControlPacket)
 	if cg, ok := s.clientPackets[packetID]; ok {
 		cg.responseChan <- *recv
 		delete(s.clientPackets, packetID)
-		if err := s.clientStore.Delete(packetID); err != nil {
-			s.errors.Printf("failed to remove message %d from store: %s", packetID, err)
+		// Outgoing publish messages will be in the store (replaced with PUBREL that is sent)
+		if cg.packetType == packets.PUBLISH || cg.packetType == packets.PUBREL {
+			if qErr := s.inflight.Release(); qErr != nil {
+				s.errors.Printf("quota release due to %d: %s", recv.PacketType(), qErr)
+			}
+			if err := s.clientStore.Delete(packetID); err != nil {
+				s.errors.Printf("failed to remove message %d from store: %s", packetID, err)
+			}
 		}
 	} else {
 		s.debug.Println("received a response for a message ID we don't know:", recv.PacketID())
@@ -489,15 +483,14 @@ func (s *State) PacketReceived(recv *packets.ControlPacket, pubChan chan<- *pack
 		return nil
 	case *packets.Puback: // QOS 1 initial (and final) response
 		s.debug.Println("received PUBACK packet with id ", rp.PacketID)
-		s.clientStore.Delete(rp.PacketID)
-		s.inflight.Release(1)
 		s.endClientGenerated(rp.PacketID, recv)
 		return nil
 	case *packets.Pubrec: // Initial response to a QOS2 Publish
 		s.debug.Println("received PUBREC packet with id ", rp.PacketID)
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		if cg, ok := s.clientPackets[rp.PacketID]; !ok {
+		_, ok := s.clientPackets[rp.PacketID]
+		s.mu.Unlock()
+		if !ok {
 			pl := packets.Pubrel{ // Respond with "Packet Identifier not found"
 				PacketID:   recv.Content.(*packets.Pubrec).PacketID,
 				ReasonCode: 0x92,
@@ -509,10 +502,7 @@ func (s *State) PacketReceived(recv *packets.ControlPacket, pubChan chan<- *pack
 			}
 		} else {
 			if rp.ReasonCode >= 0x80 {
-				// Received a failure code (ending the transaction)
-				cg.responseChan <- *recv
-				delete(s.clientPackets, rp.PacketID)
-				s.clientStore.Delete(rp.PacketID)
+				s.endClientGenerated(rp.PacketID, recv)
 			} else {
 				pl := packets.Pubrel{
 					PacketID: rp.PacketID,
@@ -530,8 +520,6 @@ func (s *State) PacketReceived(recv *packets.ControlPacket, pubChan chan<- *pack
 		return nil
 	case *packets.Pubcomp: // QOS 2 final response
 		s.debug.Printf("received PUBCOMP packet with id %d", rp.PacketID)
-		s.clientStore.Delete(rp.PacketID)
-		s.inflight.Release(1)
 		s.endClientGenerated(rp.PacketID, recv)
 		return nil
 		//
@@ -646,17 +634,11 @@ func (s *State) allocateNextPacketId(forPacketType byte, resp chan<- packets.Con
 }
 
 // clean deletes any existing stored session information
+// does not touch inflight because this is not part of the session state (so is reset separately)
 // caller is responsible for locking s.mu
 func (s *State) clean() {
 	s.debug.Println("State.clean() called")
 	s.serverPackets = make(map[uint16]byte)
-
-	for _, p := range s.clientPackets {
-		p.responseChan <- packets.ControlPacket{}
-		if p.packetType == packets.PUBLISH {
-			s.inflight.Release(1) // Cleaned publish packets are no longer in flight
-		}
-	}
 	s.clientPackets = make(map[uint16]clientGenerated)
 
 	s.serverStore.Reset()
