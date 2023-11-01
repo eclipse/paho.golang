@@ -69,6 +69,10 @@ func (m *Store) Get(packetID uint16) (io.ReadCloser, error) {
 func (m *Store) Delete(id uint16) error {
 	m.Lock()
 	defer m.Unlock()
+	if _, ok := m.data[id]; !ok {
+		// This could be ignored, but reporting it may help reveal other issues
+		return fmt.Errorf("request to delete packet %d; packet not found", id)
+	}
 	delete(m.data, id)
 	return nil
 }

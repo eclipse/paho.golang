@@ -16,6 +16,7 @@ import (
 func TestPacketIdAllocateAndFreeAll(t *testing.T) {
 	ss := NewInMemory()
 	ss.clientPackets = make(map[uint16]clientGenerated)
+	ss.inflight = newSendQuota(200) // not testing this but its needed for endClientGenerated to work
 
 	// Use full band
 	cpChan := make(chan packets.ControlPacket)
@@ -89,6 +90,7 @@ func TestPacketIdAllocateAndFreeAll(t *testing.T) {
 func TestPacketIdHoles(t *testing.T) {
 	ss := NewInMemory()
 	ss.clientPackets = make(map[uint16]clientGenerated)
+	ss.inflight = newSendQuota(200) // not testing this but its needed for endClientGenerated to work
 
 	// For this test we ignore responses
 	cpChan := make(chan packets.ControlPacket)
