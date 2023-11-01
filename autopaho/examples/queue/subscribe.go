@@ -32,7 +32,7 @@ func subscribe(ctx context.Context, brokerURL *url.URL, msgCount uint64, ready c
 		SessionExpiryInterval:         60,   // If connection drops we want session to remain live whilst we reconnect
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
-			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
+			if _, err := cm.Subscribe(ctx, &paho.Subscribe{
 				Subscriptions: []paho.SubscribeOptions{
 					{Topic: testTopic, QoS: QOS},
 				},
@@ -119,6 +119,9 @@ func subscribe(ctx context.Context, brokerURL *url.URL, msgCount uint64, ready c
 waitLoop:
 	for {
 		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			break waitLoop
 		case <-allReceived:
 			break waitLoop
 		case <-ping:
@@ -136,6 +139,11 @@ waitLoop:
 				break waitLoop
 			}
 		}
+	}
+
+	if err != nil {
+		fmt.Println("subscribe: Aborting due to: ", err)
+		return
 	}
 
 	fmt.Println("subscribe: All received, disconnecting")

@@ -107,7 +107,7 @@ is required that holds information on messages that have not been fully acknowle
 state in memory meaning that messages will not be lost following a reconnection, but may be lost if the program is 
 restarted (a file-based store can be used to avoid this).   
 
-A range of settings impact message delivery; if you wand guaranteed delivery, then remember to:
+A range of settings impact message delivery; if you want guaranteed delivery, then remember to:
 
 * Use a unique, client ID (you need to ensue any subsequent connections use the same ID)
 * Configure `CleanStartOnInitialConnection` and `SessionExpiryInterval` appropriately (e.g. `false`, `600`).
