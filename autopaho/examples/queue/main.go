@@ -37,7 +37,12 @@ func main() {
 		subscribe(ctx, u, msgCount, subReady)
 		stop() // All done so close things down
 	}()
-	<-subReady // Wait for subscribe to connect/subscribe
+	select {
+	case <-subReady: // Wait for subscribe to connect/subscribe
+	case <-ctx.Done():
+		fmt.Println("signal caught - exiting")
+		return
+	}
 
 	publish(ctx, u, msgCount)
 
