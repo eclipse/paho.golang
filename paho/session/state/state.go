@@ -331,16 +331,24 @@ func (s *State) AddToSession(ctx context.Context, packet session.Packet, resp ch
 		return session.ErrNoConnection
 	}
 	// If the connection is lost whilst we are waiting, then in Acquire should terminate.
-	stopAf := context.AfterFunc(s.connCtx, func() { cancel() })
-	defer stopAf()
+	connCtx := s.connCtx
 	s.mu.Unlock()
+
+	// If the connection drops while waiting we should abort
+	go func() {
+		select {
+		case <-connCtx.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 
 	pt := packet.Type()
 
 	// Ensure only "RECEIVE MAXIMUM" PUBLISH transactions are in flight at any time
 	if pt == packets.PUBLISH {
 		if err := s.inflight.Acquire(ctx); err != nil {
-			if s.connCtx.Err() != nil {
+			if connCtx.Err() != nil {
 				return session.ErrNoConnection
 			}
 			return err // Allow user to confirm if it was their context that led to termination
