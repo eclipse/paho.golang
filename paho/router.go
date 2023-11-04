@@ -10,6 +10,9 @@ import (
 
 // MessageHandler is a type for a function that is invoked
 // by a Router when it has received a Publish.
+// MessageHandlers should complete quickly (start a go routine for
+// long-running processes) and should not call functions within the
+// paho instance that triggered them (due to potential deadlocks).
 type MessageHandler func(*Publish)
 
 // Router is an interface of the functions for a struct that is
@@ -32,9 +35,10 @@ type Router interface {
 // allows for unique and multiple MessageHandlers per topic
 type StandardRouter struct {
 	sync.RWMutex
-	subscriptions map[string][]MessageHandler
-	aliases       map[uint16]string
-	debug         log.Logger
+	defaultHandler MessageHandler
+	subscriptions  map[string][]MessageHandler
+	aliases        map[uint16]string
+	debug          log.Logger
 }
 
 // NewStandardRouter instantiates and returns an instance of a StandardRouter
@@ -91,13 +95,19 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 		topic = m.Topic
 	}
 
+	handlerCalled := false
 	for route, handlers := range r.subscriptions {
 		if match(route, topic) {
 			r.debug.Println("found handler for:", route)
 			for _, handler := range handlers {
 				handler(m)
+				handlerCalled = true
 			}
 		}
+	}
+
+	if !handlerCalled && r.defaultHandler != nil {
+		r.defaultHandler(m)
 	}
 }
 
@@ -105,6 +115,15 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 // information for the router
 func (r *StandardRouter) SetDebugLogger(l log.Logger) {
 	r.debug = l
+}
+
+// DefaultHandler sets handler to be called for messages that don't trigger another handler
+// Pass nil to unset.
+func (r *StandardRouter) DefaultHandler(h MessageHandler) {
+	r.debug.Println("registering default handler")
+	r.Lock()
+	defer r.Unlock()
+	r.defaultHandler = h
 }
 
 func match(route, topic string) bool {
