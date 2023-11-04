@@ -3,6 +3,8 @@ package paho
 import (
 	"reflect"
 	"testing"
+
+	"github.com/eclipse/paho.golang/packets"
 )
 
 func Test_match(t *testing.T) {
@@ -72,4 +74,41 @@ func Test_routeSplit(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_routeDefault(t *testing.T) {
+	var r1Count, r2Count int
+
+	r1 := func(p *Publish) { r1Count++ }
+	r2 := func(p *Publish) { r2Count++ }
+
+	r := NewStandardRouter()
+	r.RegisterHandler("test", r1)
+
+	r.Route(&packets.Publish{Topic: "test", Properties: &packets.Properties{}})
+	if r1Count != 1 {
+		t.Errorf("router1 should have been called r1: %d, r2: %d", r1Count, r2Count)
+	}
+	// Confirm that unset default does not cause issue
+	r.Route(&packets.Publish{Topic: "xxyy", Properties: &packets.Properties{}})
+	if r1Count != 1 {
+		t.Errorf("router1 should not have been called r1: %d, r2: %d", r1Count, r2Count)
+	}
+
+	r.DefaultHandler(r2)
+	r.Route(&packets.Publish{Topic: "test", Properties: &packets.Properties{}})
+	if r1Count != 2 || r2Count != 0 {
+		t.Errorf("router1 should been called r1: %d, r2: %d", r1Count, r2Count)
+	}
+	r.Route(&packets.Publish{Topic: "xxyy", Properties: &packets.Properties{}})
+	if r1Count != 2 || r2Count != 1 {
+		t.Errorf("router2 should have been called r1: %d, r2: %d", r1Count, r2Count)
+	}
+
+	r.DefaultHandler(nil)
+	r.Route(&packets.Publish{Topic: "xxyy", Properties: &packets.Properties{}})
+	if r1Count != 2 || r2Count != 1 {
+		t.Errorf("no router should have been called r1: %d, r2: %d", r1Count, r2Count)
+	}
+
 }
