@@ -25,15 +25,15 @@ import (
 // AutoPaho is a wrapper around github.com/eclipse/paho.golang that simplifies the connection process; it automates
 // connections (retrying until the connection comes up) and will attempt to re-establish the connection if it is lost.
 //
-// The aim is to cover a common requirement (connect to the broker and try to keep the connection up); if your
+// The aim is to cover a common requirement (connect to the server and try to keep the connection up); if your
 // requirements differ then please consider using github.com/eclipse/paho.golang directly (perhaps using the
 // code in this file as a base; a secondary aim is to provide example code!).
 
-// ConnectionDownError Down will be returned when a request is made but the connection to the broker is down
-// Note: It is possible that the connection will drop between the request being made and a response being received in
+// ConnectionDownError Down will be returned when a request is made but the connection to the server is down
+// Note: It is possible that the connection will drop between the request being made and a response being received, in
 // which case a different error will be received (this is only returned if the connection is down at the time the
 // request is made).
-var ConnectionDownError = errors.New("connection with the MQTT broker is currently down")
+var ConnectionDownError = errors.New("connection with the MQTT server is currently down")
 
 // WebSocketConfig enables customisation of the websocket connection
 type WebSocketConfig struct {
@@ -44,7 +44,7 @@ type WebSocketConfig struct {
 // ClientConfig adds a few values, required to manage the connection, to the standard paho.ClientConfig (note that
 // conn will be ignored)
 type ClientConfig struct {
-	BrokerUrls                    []*url.URL  // URL(s) for the broker (schemes supported include 'mqtt' and 'tls')
+	ServerUrls                    []*url.URL  // URL(s) for the MQTT server (schemes supported include 'mqtt' and 'tls')
 	TlsCfg                        *tls.Config // Configuration used when connecting using TLS
 	KeepAlive                     uint16      // Keepalive period in seconds (the maximum time interval that is permitted to elapse between the point at which the Client finishes transmitting one MQTT Control Packet and the point it starts sending the next)
 	CleanStartOnInitialConnection bool        //  Clean Start flag, if true, existing session information will be cleared on the first connection (it will be false for subsequent connections)
@@ -55,6 +55,9 @@ type ClientConfig struct {
 	WebSocketCfg      *WebSocketConfig // Enables customisation of the websocket connection
 
 	Queue queue.Queue // Used to queue up publish messages (if nil an error will be returned if publish could not be transmitted)
+
+	// Depreciated: Use ServerUrls instead (this will be used if ServerUrls is empty). Will be removed in a future release.
+	BrokerUrls []*url.URL
 
 	// AttemptConnection, if provided, will be called to establish a network connection.
 	// The returned `conn` must support thread safe writing; most wrapped net.Conn implementations like tls.Conn
@@ -70,34 +73,26 @@ type ClientConfig struct {
 	PahoDebug  log.Logger // debugger passed to the paho package (will default to NOOPLogger{})
 	PahoErrors log.Logger // error logger passed to the paho package (will default to NOOPLogger{})
 
-	connectUsername string
-	connectPassword []byte
+	ConnectUsername string
+	ConnectPassword []byte
 
-	willTopic           string
-	willPayload         []byte
-	willQos             byte
-	willRetain          bool
-	willPayloadFormat   byte
-	willMessageExpiry   uint32
-	willContentType     string
-	willResponseTopic   string
-	willCorrelationData []byte
+	WillMessage    *paho.WillMessage
+	WillProperties *paho.WillProperties
 
-	// Set with SetConnectPacketConfigurator - called prior to connection allowing customisation of the CONNECT packet
-	connectPacketBuilder func(*paho.Connect) *paho.Connect
+	ConnectPacketBuilder func(*paho.Connect) *paho.Connect // called prior to connection allowing customisation of the CONNECT packet
 
-	// Set with SetDisConnectPacketConfigurator - called prior to disconnection allowing customisation of the DISCONNECT
+	// DisconnectPacketBuilder - called prior to disconnection allowing customisation of the DISCONNECT
 	// packet. If the function returns nil, then no DISCONNECT packet will be passed; if nil a default packet is sent.
-	disConnectPacketBuilder func() *paho.Disconnect
+	DisconnectPacketBuilder func() *paho.Disconnect
 
 	// We include the full paho.ClientConfig in order to simplify moving between the two packages.
 	// Note that Conn will be ignored.
 	paho.ClientConfig
 }
 
-// ConnectionManager manages the connection with the broker and provides thew ability to publish messages
+// ConnectionManager manages the connection with the server and provides the ability to publish messages
 type ConnectionManager struct {
-	cli      *paho.Client  // The client will only be set when the connection is up (only updated within NewBrokerConnection goRoutine)
+	cli      *paho.Client  // The client will only be set when the connection is up (only updated within NewServerConnection goRoutine)
 	connUp   chan struct{} // Channel is closed when the connection is up (only valid if cli == nil; must lock Mu to read)
 	connDown chan struct{} // Channel is closed when the connection is down (only valid if cli != nil; must lock Mu to read)
 	mu       sync.Mutex    // protects all of the above
@@ -114,44 +109,66 @@ type ConnectionManager struct {
 }
 
 // ResetUsernamePassword clears any configured username and password on the client configuration
+//
+// Set ConnectUsername and ConnectPassword directly instead.
 func (cfg *ClientConfig) ResetUsernamePassword() {
-	cfg.connectPassword = []byte{}
-	cfg.connectUsername = ""
+	cfg.ConnectPassword = []byte{}
+	cfg.ConnectUsername = ""
 }
 
 // SetUsernamePassword configures username and password properties for the Connect packets
 // These values are staged in the ClientConfig, and preparation of the Connect packet is deferred.
+//
+// Deprecated: Set ConnectUsername and ConnectPassword directly instead.
 func (cfg *ClientConfig) SetUsernamePassword(username string, password []byte) {
 	if len(username) > 0 {
-		cfg.connectUsername = username
+		cfg.ConnectUsername = username
 	}
 
 	if len(password) > 0 {
-		cfg.connectPassword = password
+		cfg.ConnectPassword = password
 	}
 }
 
 // SetWillMessage configures the Will topic, payload, QOS and Retain facets of the client connection
 // These values are staged in the ClientConfig, for later preparation of the Connect packet.
+//
+// Deprecated: Set WillMessage and WillProperties directly instead.
 func (cfg *ClientConfig) SetWillMessage(topic string, payload []byte, qos byte, retain bool) {
-	cfg.willTopic = topic
-	cfg.willPayload = payload
-	cfg.willQos = qos
-	cfg.willRetain = retain
+	cfg.WillMessage = &paho.WillMessage{
+		Retain:  retain,
+		Payload: payload,
+		Topic:   topic,
+		QoS:     qos,
+	}
+
+	// Default Will Properties will match the values used in previous versions for compatibility
+	willDelayInterval := uint32(2 * cfg.KeepAlive)
+
+	cfg.WillProperties = &paho.WillProperties{
+		// Most of these are nil/empty or defaults until related methods are exposed for configuration
+		WillDelayInterval: &willDelayInterval,
+	}
 }
 
 // SetConnectPacketConfigurator assigns a callback for modification of the Connect packet, called before the connection is opened, allowing the application to adjust its configuration before establishing a connection.
 // This function should be treated as asynchronous, and expected to have no side effects.
+//
+// Deprecated: Set ConnectPacketBuilder directly instead. This function exists for
+// backwards compatibility only (and may be removed in the future).
 func (cfg *ClientConfig) SetConnectPacketConfigurator(fn func(*paho.Connect) *paho.Connect) bool {
-	cfg.connectPacketBuilder = fn
+	cfg.ConnectPacketBuilder = fn
 	return fn != nil
 }
 
 // SetDisConnectPacketConfigurator assigns a callback for the provision of a DISCONNECT packet. By default, a DISCONNECT
 // is sent to the server when Disconnect is called; setting a callback allows a custom packet to be provided, or no
 // packet (by returning nil).
+//
+// Deprecated: Set DisconnectPacketBuilder directly instead. This function exists for
+// backwards compatibility only (and may be removed in the future).
 func (cfg *ClientConfig) SetDisConnectPacketConfigurator(fn func() *paho.Disconnect) {
-	cfg.disConnectPacketBuilder = fn
+	cfg.DisconnectPacketBuilder = fn
 }
 
 // buildConnectPacket constructs a Connect packet for the paho client, based on staged configuration.
@@ -164,36 +181,22 @@ func (cfg *ClientConfig) buildConnectPacket(firstConnection bool) *paho.Connect 
 		CleanStart: cfg.CleanStartOnInitialConnection && firstConnection,
 	}
 
-	if len(cfg.connectUsername) > 0 {
+	if len(cfg.ConnectUsername) > 0 {
 		cp.UsernameFlag = true
-		cp.Username = cfg.connectUsername
+		cp.Username = cfg.ConnectUsername
 	}
 
-	if len(cfg.connectPassword) > 0 {
+	if len(cfg.ConnectPassword) > 0 {
 		cp.PasswordFlag = true
-		cp.Password = cfg.connectPassword
+		cp.Password = cfg.ConnectPassword
 	}
 
-	if len(cfg.willTopic) > 0 && len(cfg.willPayload) > 0 {
-		cp.WillMessage = &paho.WillMessage{
-			Retain:  cfg.willRetain,
-			Payload: cfg.willPayload,
-			Topic:   cfg.willTopic,
-			QoS:     cfg.willQos,
-		}
-
-		// how the broker should wait before considering the client disconnected
-		// hopefully this default is sensible for most applications, tolerating short interruptions
-		willDelayInterval := uint32(2 * cfg.KeepAlive)
-
-		cp.WillProperties = &paho.WillProperties{
-			// Most of these are nil/empty or defaults until related methods are exposed for configuration
-			WillDelayInterval: &willDelayInterval,
-			PayloadFormat:     &cfg.willPayloadFormat,
-			MessageExpiry:     &cfg.willMessageExpiry,
-			ContentType:       cfg.willContentType,
-			ResponseTopic:     cfg.willResponseTopic,
-			CorrelationData:   cfg.willCorrelationData,
+	if cfg.WillMessage != nil {
+		cp.WillMessage = cfg.WillMessage
+		if cfg.WillProperties != nil {
+			cp.WillProperties = cfg.WillProperties
+		} else {
+			cp.WillProperties = &paho.WillProperties{}
 		}
 	}
 
@@ -201,8 +204,8 @@ func (cfg *ClientConfig) buildConnectPacket(firstConnection bool) *paho.Connect 
 		cp.Properties = &paho.ConnectProperties{SessionExpiryInterval: &cfg.SessionExpiryInterval}
 	}
 
-	if cfg.connectPacketBuilder != nil {
-		cp = cfg.connectPacketBuilder(cp)
+	if cfg.ConnectPacketBuilder != nil {
+		cp = cfg.ConnectPacketBuilder(cp)
 	}
 
 	return cp
@@ -222,7 +225,10 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	if cfg.ConnectTimeout == 0 {
 		cfg.ConnectTimeout = 10 * time.Second
 	}
-	if len(cfg.BrokerUrls) == 0 { // This would cause an infinite loop
+	if len(cfg.ServerUrls) == 0 { // backwards compatibility
+		cfg.ServerUrls = cfg.BrokerUrls
+	}
+	if len(cfg.ServerUrls) == 0 { // This would cause an infinite loop
 		return nil, errors.New("no server urls provided")
 	}
 	if cfg.Queue == nil {
@@ -263,7 +269,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			cliCfg := cfg
 			cliCfg.OnClientError = eh.onClientError
 			cliCfg.OnServerDisconnect = eh.onServerDisconnect
-			cli, connAck := establishBrokerConnection(innerCtx, cliCfg, firstConnection)
+			cli, connAck := establishServerConnection(innerCtx, cliCfg, firstConnection)
 			if cli == nil {
 				break mainLoop // Only occurs when context is cancelled
 			}
@@ -295,8 +301,8 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 				eh.shutdown() // Prevent any errors triggered by closure of context from reaching user
 				// As the connection is up, we call disconnect to shut things down cleanly
 				dp := &paho.Disconnect{ReasonCode: 0}
-				if cfg.disConnectPacketBuilder != nil {
-					dp = cfg.disConnectPacketBuilder()
+				if cfg.DisconnectPacketBuilder != nil {
+					dp = cfg.DisconnectPacketBuilder()
 				}
 				if dp != nil {
 					if err = c.cli.Disconnect(dp); err != nil {
@@ -304,9 +310,9 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 					}
 				}
 				if ctx.Err() != nil { // If this is due to outer context being cancelled, then this will have happened before the inner one gets cancelled.
-					cfg.Debug.Printf("mainLoop: broker connection handler exiting due to context: %s\n", ctx.Err())
+					cfg.Debug.Printf("mainLoop: server connection handler exiting due to context: %s\n", ctx.Err())
 				} else {
-					cfg.Debug.Printf("mainLoop: broker connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())
+					cfg.Debug.Printf("mainLoop: server connection handler exiting due to Disconnect call: %s\n", innerCtx.Err())
 				}
 				break mainLoop
 			}
@@ -316,7 +322,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			close(c.connDown)
 			c.connUp = make(chan struct{})
 			c.mu.Unlock()
-			cfg.Debug.Printf("mainLoop: connection to broker lost (%s); will reconnect\n", err)
+			cfg.Debug.Printf("mainLoop: connection to server lost (%s); will reconnect\n", err)
 		}
 		cfg.Debug.Println("mainLoop: connection manager has terminated")
 	}()

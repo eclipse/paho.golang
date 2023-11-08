@@ -18,7 +18,7 @@ import (
 	storefile "github.com/eclipse/paho.golang/paho/store/file"
 )
 
-// Connect to the broker and publish a message periodically
+// Connect to the server and publish a message periodically
 func main() {
 	cfg, err := getConfig()
 	if err != nil {
@@ -41,7 +41,7 @@ func main() {
 	}
 
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls:                    []*url.URL{cfg.serverURL},
+		ServerUrls:                    []*url.URL{cfg.serverURL},
 		KeepAlive:                     cfg.keepAlive,
 		CleanStartOnInitialConnection: false, // the default
 		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
@@ -71,7 +71,7 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Connect to the broker - this will return immediately after initiating the connection process
+	// Connect to the server - this will return immediately after initiating the connection process
 	cm, err := autopaho.NewConnection(ctx, cliCfg)
 	if err != nil {
 		panic(err)

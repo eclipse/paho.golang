@@ -2,7 +2,7 @@ Queue
 ===
 
 Users often want to call `Publish` and then move on to other things on the assumption that the message will eventually 
-get to the broker (even if the connection is down at the time the message is sent). This example shows how to implement
+get to the server (even if the connection is down at the time the message is sent). This example shows how to implement
 this with `autopaho`; it sends a large number of QOS1/2 messages and confirms that they are correctly received (using a 
 second connection).
 
@@ -14,7 +14,7 @@ potentially, simulating network outages).
 Note that a linked concept is the MQTT V5 "Receive maximum" functionality. This allows the server to tell the client the
 maximum number of inflight QOS1/2 messages that it will accept. The client then needs to limit inflight messages to 
 comply; this may mean that the client needs to queue messages to avoid exceeding the limit. How this is configured will 
-vary depending upon the broker (with Mosquitto its the `max_inflight_messages` setting and defaults to 20).
+vary depending upon the server (with Mosquitto its the `max_inflight_messages` setting and defaults to 20).
 
 Note that, by default, a memory-based queue is used. This example demonstrates storage on disk thus enabling queued
 messages to survive an application restart.
@@ -29,7 +29,7 @@ Use three consoles; one each for:
 ### Mosquitto
 
 **Note**: Before running this ensure that `mosquitto.conf` contains `persistence true` (this is not in the default 
-config and without it tests that include restarting the broker will fail).
+config and without it tests that include restarting the server will fail).
 
 Change to the `autopaho/examples/docker` folder and run `docker compose up mosquitto` this will start Mosquitto and the
 log will be output. Note that logging significantly impacts performance so if you are testing that edit the 

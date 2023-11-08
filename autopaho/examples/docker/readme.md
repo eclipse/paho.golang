@@ -1,11 +1,11 @@
 Docker example
 ==============
 
-This folder contains all that is needed to build an environment with a publisher, broker (mosquitto) and subscriber
+This folder contains all that is needed to build an environment with a publisher, server (mosquitto) and subscriber
 using docker (ideally `docker-compose`). While it provides an end-to-end example its primary purpose is to act as a
 starting point for producing reproducible examples (when logging an issue with the library).
 
-Because the publisher (`pub`), broker (`mosquitto`) and subscriber (`sub`) run in separate containers this setup closely
+Because the publisher (`pub`), server (`mosquitto`) and subscriber (`sub`) run in separate containers this setup closely
 simulates a real deployment. One thing to bear in mind is that the network between the containers is very fast and
 reliable (but there are some techniques that can be used to simulate failures etc).
 

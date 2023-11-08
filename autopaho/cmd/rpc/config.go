@@ -106,7 +106,7 @@ func getConfig() (config, error) {
 
 func getCmConfig(cfg config) autopaho.ClientConfig {
 	return autopaho.ClientConfig{
-		BrokerUrls:        []*url.URL{cfg.serverURL},
+		ServerUrls:        []*url.URL{cfg.serverURL},
 		KeepAlive:         cfg.keepAlive,
 		ConnectRetryDelay: cfg.connectRetryDelay,
 		ConnectTimeout:    time.Duration(5 * time.Second),

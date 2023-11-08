@@ -25,7 +25,7 @@ import (
 // disconnects during the process).
 func TestQueuedMessages(t *testing.T) {
 	t.Parallel()
-	broker, _ := url.Parse(dummyURL)
+	server, _ := url.Parse(dummyURL)
 	serverLogger := paholog.NewTestLogger(t, "testServer:")
 	logger := paholog.NewTestLogger(t, "test:")
 
@@ -71,7 +71,7 @@ func TestQueuedMessages(t *testing.T) {
 	defer session.Close()
 	connectCount := 0
 	config := ClientConfig{
-		BrokerUrls:        []*url.URL{broker},
+		ServerUrls:        []*url.URL{server},
 		KeepAlive:         60,
 		ConnectRetryDelay: 500 * time.Millisecond, // Retry connection very quickly!
 		ConnectTimeout:    shortDelay,             // Connection should come up very quickly

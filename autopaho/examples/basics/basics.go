@@ -14,7 +14,7 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-const clientID = "PahoGoClient" // Change this to something random if using a public test broker
+const clientID = "PahoGoClient" // Change this to something random if using a public test server
 const topic = "PahoGoTestTopic"
 
 func main() {
@@ -22,20 +22,20 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// We will connect to the Eclipse test broker (note that you may see messages that other users publish)
+	// We will connect to the Eclipse test server (note that you may see messages that other users publish)
 	u, err := url.Parse("mqtt://mqtt.eclipseprojects.io:1883")
 	if err != nil {
 		panic(err)
 	}
 
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls: []*url.URL{u},
+		ServerUrls: []*url.URL{u},
 		KeepAlive:  20, // Keepalive message should be sent every 20 seconds
 		// CleanStartOnInitialConnection defaults to false. Setting this to true will clear the session on the first connection.
 		CleanStartOnInitialConnection: false,
 		// SessionExpiryInterval - Seconds that a session will survive after disconnection.
 		// It is important to set this because otherwise, any queued messages will be lost if the connection drops and
-		// the broker will not queue messages while it is down. The specific setting will depend upon your needs
+		// the server will not queue messages while it is down. The specific setting will depend upon your needs
 		// (60 = 1 minute, 3600 = 1 hour, 86400 = one day, 0xFFFFFFFE = 136 years, 0xFFFFFFFF = don't expire)
 		SessionExpiryInterval: 60,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
