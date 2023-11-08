@@ -34,7 +34,7 @@ func main() {
 	}
 
 	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+		Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 			log.Printf("%s : %s", m.Properties.User.Get("chatname"), string(m.Payload))
 		}),
 		Conn: conn,

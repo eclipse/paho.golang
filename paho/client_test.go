@@ -311,7 +311,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: NewStandardRouterWithDefault(func(p *Publish) {
 			assert.Equal(t, "test/0", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(0), p.QoS)
@@ -356,7 +356,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: NewStandardRouterWithDefault(func(p *Publish) {
 			assert.Equal(t, "test/1", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(1), p.QoS)
@@ -402,7 +402,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: NewStandardRouterWithDefault(func(p *Publish) {
 			assert.Equal(t, "test/2", p.Topic)
 			assert.Equal(t, "test payload", string(p.Payload))
 			assert.Equal(t, byte(2), p.QoS)
@@ -464,7 +464,7 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 	wg.Add(expectedPacketsCount)
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewSingleHandlerRouter(func(p *Publish) {
+		Router: NewStandardRouterWithDefault(func(p *Publish) {
 			defer wg.Done()
 			actualPublishPackets = append(actualPublishPackets, *p.Packet())
 		}),
@@ -545,7 +545,7 @@ func TestManualAcksInOrder(t *testing.T) {
 		Conn:                       ts.ClientConn(),
 		EnableManualAcknowledgment: true,
 	})
-	c.Router = NewSingleHandlerRouter(func(p *Publish) {
+	c.Router = NewStandardRouterWithDefault(func(p *Publish) {
 		defer wg.Done()
 		actualPublishPackets = append(actualPublishPackets, *p.Packet())
 		require.NoError(t, c.Ack(p))

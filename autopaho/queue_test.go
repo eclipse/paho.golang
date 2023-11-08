@@ -98,7 +98,7 @@ func TestQueuedMessages(t *testing.T) {
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
 			Session:  session,
-			Router:   paho.NewSingleHandlerRouter(func(publish *paho.Publish) {}),
+			Router:   paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {}),
 		},
 	}
 

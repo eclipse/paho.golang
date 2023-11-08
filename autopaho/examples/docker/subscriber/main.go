@@ -64,7 +64,7 @@ func main() {
 		ClientConfig: paho.ClientConfig{
 			ClientID: cfg.clientID,
 			Session:  sessionState,
-			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				h.handle(m)
 			}),
 			OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },

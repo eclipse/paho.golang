@@ -127,7 +127,7 @@ func getCmConfig(cfg config) autopaho.ClientConfig {
 		OnConnectError: func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		ClientConfig: paho.ClientConfig{
 			ClientID: cfg.clientID,
-			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				log.Printf("%v+", m)
 			}),
 			OnClientError: func(err error) { fmt.Printf("%s requested disconnect: %s\n", cfg.clientID, err) },

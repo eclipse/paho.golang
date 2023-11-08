@@ -296,7 +296,7 @@ func TestBasicPubSub(t *testing.T) {
 		PahoErrors:     logger,
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
-			Router: paho.NewSingleHandlerRouter(func(publish *paho.Publish) {
+			Router: paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {
 				mrMu.Lock()
 				defer mrMu.Unlock()
 				messagesReceived = append(messagesReceived, publish)

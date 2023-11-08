@@ -50,6 +50,15 @@ func NewStandardRouter() *StandardRouter {
 	}
 }
 
+// NewStandardRouterWithDefault instantiates and returns an instance of a StandardRouter
+// with the default handler set to the value passed in (for convenience when creating
+// handler inline).
+func NewStandardRouterWithDefault(h MessageHandler) *StandardRouter {
+	r := NewStandardRouter()
+	r.DefaultHandler(h)
+	return r
+}
+
 // RegisterHandler is the library provided StandardRouter's
 // implementation of the required interface function()
 func (r *StandardRouter) RegisterHandler(topic string, h MessageHandler) {
@@ -173,60 +182,12 @@ func topicSplit(topic string) []string {
 	return strings.Split(topic, "/")
 }
 
-// SingleHandlerRouter is a library provided implementation of a Router
-// that stores only a single MessageHandler and invokes this MessageHandler
-// for all received Publishes
-type SingleHandlerRouter struct {
-	sync.Mutex
-	aliases map[uint16]string
-	handler MessageHandler
-	debug   log.Logger
-}
-
-// NewSingleHandlerRouter instantiates and returns an instance of a SingleHandlerRouter
-func NewSingleHandlerRouter(h MessageHandler) *SingleHandlerRouter {
-	return &SingleHandlerRouter{
-		aliases: make(map[uint16]string),
-		handler: h,
-		debug:   log.NOOPLogger{},
-	}
-}
-
-// RegisterHandler is the library provided SingleHandlerRouter's
-// implementation of the required interface function()
-func (s *SingleHandlerRouter) RegisterHandler(topic string, h MessageHandler) {
-	s.debug.Println("registering handler for:", topic)
-	s.handler = h
-}
-
-// UnregisterHandler is the library provided SingleHandlerRouter's
-// implementation of the required interface function()
-func (s *SingleHandlerRouter) UnregisterHandler(topic string) {}
-
-// Route is the library provided SingleHandlerRouter's
-// implementation of the required interface function()
-func (s *SingleHandlerRouter) Route(pb *packets.Publish) {
-	m := PublishFromPacketPublish(pb)
-
-	s.debug.Println("routing message for:", m.Topic)
-
-	if pb.Properties.TopicAlias != nil {
-		s.debug.Println("message is using topic aliasing")
-		if pb.Topic != "" {
-			// Register new alias
-			s.debug.Printf("registering new topic alias '%d' for topic '%s'", *pb.Properties.TopicAlias, m.Topic)
-			s.aliases[*pb.Properties.TopicAlias] = pb.Topic
-		}
-		if t, ok := s.aliases[*pb.Properties.TopicAlias]; ok {
-			s.debug.Printf("aliased topic '%d' translates to '%s'", *pb.Properties.TopicAlias, m.Topic)
-			m.Topic = t
-		}
-	}
-	s.handler(m)
-}
-
-// SetDebugLogger sets the logger l to be used for printing debug
-// information for the router
-func (s *SingleHandlerRouter) SetDebugLogger(l log.Logger) {
-	s.debug = l
+// NewSingleHandlerRouter instantiates a router that will call the passed in message handler for all
+// inbound messages (assuming `RegisterHandler` is never called).
+//
+// Deprecated: SingleHandlerRouter has been removed because it did not meet the requirements set out
+// in the `Router` interface documentation. This function is only included to maintain compatibility,
+// but there are limits (this version does not ignore calls to `RegisterHandler`).
+func NewSingleHandlerRouter(h MessageHandler) *StandardRouter {
+	return NewStandardRouterWithDefault(h)
 }

@@ -51,7 +51,7 @@ func listener(server, rTopic, username, password string) {
 		c := paho.NewClient(paho.ClientConfig{
 			Conn: conn,
 		})
-		c.Router = paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+		c.Router = paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 			if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
 				log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
 
@@ -138,7 +138,7 @@ func main() {
 	password := flag.String("password", "", "Password to match username")
 	flag.Parse()
 
-	//paho.SetDebugLogger(log.New(os.Stderr, "RPC: ", log.LstdFlags))
+	// paho.SetDebugLogger(log.New(os.Stderr, "RPC: ", log.LstdFlags))
 
 	listener(*server, *rTopic, *username, *password)
 
@@ -151,7 +151,7 @@ func main() {
 	defer cancel()
 
 	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewSingleHandlerRouter(nil),
+		Router: paho.NewStandardRouterWithDefault(nil),
 		Conn:   conn,
 	})
 
