@@ -9,8 +9,8 @@ import (
 	"syscall"
 )
 
-const brokerURL = "mqtt://127.0.0.1:1883"
-const testTopic = "testTopic" // We publish all messages to the same topic because the broker should maintain message order
+const serverURL = "mqtt://127.0.0.1:1883"
+const testTopic = "testTopic" // We publish all messages to the same topic because the server should maintain message order
 const msgCount = 10000
 const NotifyEvery = 100
 const timeoutSecs = 60
@@ -24,8 +24,8 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Use a local broker (a simple way to provide this is to use the docker example i.e. `docker compose up mosquitto`)
-	u, err := url.Parse(brokerURL)
+	// Use a local server (a simple way to provide this is to use the docker example i.e. `docker compose up mosquitto`)
+	u, err := url.Parse(serverURL)
 	if err != nil {
 		panic(err)
 	}
@@ -46,7 +46,7 @@ func main() {
 
 	publish(ctx, u, msgCount)
 
-	fmt.Println("messages published") // Note that messages may not have been transmitted to broker at this point
+	fmt.Println("messages published") // Note that messages may not have been transmitted to server at this point
 
 	<-ctx.Done() // Wait for user to trigger exit
 	fmt.Println("signal caught - exiting")

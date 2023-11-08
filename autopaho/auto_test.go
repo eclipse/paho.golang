@@ -42,23 +42,23 @@ func TestConnect(t *testing.T) {
 // TestDisconnect confirms that Disconnect closes the connection and exits cleanly
 func TestDisconnect(t *testing.T) {
 	t.Parallel()
-	broker, _ := url.Parse(dummyURL)
+	server, _ := url.Parse(dummyURL)
 	serverLogger := paholog.NewTestLogger(t, "testServer:")
 	logger := paholog.NewTestLogger(t, "test:")
 
 	ts := testserver.New(serverLogger)
 
 	type tsConnUpMsg struct {
-		cancelFn func()        // Function to cancel test broker context
-		done     chan struct{} // Will be closed when the test broker has disconnected (and shutdown)
+		cancelFn func()        // Function to cancel test server context
+		done     chan struct{} // Will be closed when the test server has disconnected (and shutdown)
 	}
 	var tsDone chan struct{}               // Set on AttemptConnection and closed when that test server connection is done
-	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test broker connection is up
+	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test server connection is up
 	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
 
 	errCh := make(chan error, 2)
 	config := ClientConfig{
-		BrokerUrls:        []*url.URL{broker},
+		ServerUrls:        []*url.URL{server},
 		KeepAlive:         60,
 		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
 		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
@@ -150,23 +150,23 @@ func TestDisconnect(t *testing.T) {
 // TestReconnect confirms that the connection is automatically re-established when lost
 func TestReconnect(t *testing.T) {
 	t.Parallel()
-	broker, _ := url.Parse(dummyURL)
+	server, _ := url.Parse(dummyURL)
 	serverLogger := paholog.NewTestLogger(t, "testServer:")
 	logger := paholog.NewTestLogger(t, "test:")
 
 	ts := testserver.New(serverLogger)
 
 	type tsConnUpMsg struct {
-		cancelFn func()        // Function to cancel test broker context
-		done     chan struct{} // Will be closed when the test broker has disconnected (and shutdown)
+		cancelFn func()        // Function to cancel test server context
+		done     chan struct{} // Will be closed when the test server has disconnected (and shutdown)
 	}
-	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test broker connection is up
+	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test server connection is up
 	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
 
 	atCount := 0
 
 	config := ClientConfig{
-		BrokerUrls:        []*url.URL{broker},
+		ServerUrls:        []*url.URL{server},
 		KeepAlive:         60,
 		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
 		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
@@ -217,7 +217,7 @@ func TestReconnect(t *testing.T) {
 	select {
 	case <-initialConnUpMsg.done:
 	case <-time.After(shortDelay):
-		t.Fatal("timeout awaiting test broker shutdown")
+		t.Fatal("timeout awaiting test server shutdown")
 	}
 
 	// Await reconnection
@@ -239,7 +239,7 @@ func TestReconnect(t *testing.T) {
 	select {
 	case <-secondConnUpMsg.done:
 	case <-time.After(shortDelay):
-		t.Fatal("timeout awaiting second test broker shutdown")
+		t.Fatal("timeout awaiting second test server shutdown")
 	}
 	select {
 	case <-cm.Done():
@@ -251,16 +251,16 @@ func TestReconnect(t *testing.T) {
 // TestBasicPubSub performs pub/sub operations at each QOS level
 func TestBasicPubSub(t *testing.T) {
 	t.Parallel()
-	broker, _ := url.Parse(dummyURL)
+	server, _ := url.Parse(dummyURL)
 	serverLogger := paholog.NewTestLogger(t, "testServer:")
 	logger := paholog.NewTestLogger(t, "test:")
 	ts := testserver.New(serverLogger)
 
 	type tsConnUpMsg struct {
-		cancelFn func()        // Function to cancel test broker context
-		done     chan struct{} // Will be closed when the test broker has disconnected (and shutdown)
+		cancelFn func()        // Function to cancel test server context
+		done     chan struct{} // Will be closed when the test server has disconnected (and shutdown)
 	}
-	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test broker connection is up
+	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test server connection is up
 	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
 
 	const expectedMessages = 3
@@ -271,7 +271,7 @@ func TestBasicPubSub(t *testing.T) {
 	atCount := 0
 
 	config := ClientConfig{
-		BrokerUrls:        []*url.URL{broker},
+		ServerUrls:        []*url.URL{server},
 		KeepAlive:         60,
 		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
 		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
@@ -398,10 +398,10 @@ func TestBasicPubSub(t *testing.T) {
 
 // TestClientConfig_buildConnectPacket exercises buildConnectPacket checking that options and callbacks are applied
 func TestClientConfig_buildConnectPacket(t *testing.T) {
-	broker, _ := url.Parse(dummyURL)
+	server, _ := url.Parse(dummyURL)
 
 	config := ClientConfig{
-		BrokerUrls:                    []*url.URL{broker},
+		ServerUrls:                    []*url.URL{server},
 		KeepAlive:                     5,
 		ConnectRetryDelay:             5 * time.Second,
 		ConnectTimeout:                5 * time.Second,
@@ -430,7 +430,7 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 		t.Errorf("Expected absent/empty password, got: flag=%v password=%v", cp.PasswordFlag, cp.Password)
 	}
 
-	// Set some common parameters
+	// Set some common parameters (using now depreciated functions)
 	config.SetUsernamePassword("testuser", []byte("testpassword"))
 	config.SetWillMessage(fmt.Sprintf("client/%s/state", config.ClientID), []byte("disconnected"), 1, true)
 
