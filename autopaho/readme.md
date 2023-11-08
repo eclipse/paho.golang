@@ -15,20 +15,20 @@ The following code demonstrates basic usage; the full code is available under `e
 ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 defer stop()
 
-// We will connect to the Eclipse test broker (note that you may see messages that other users publish)
+// We will connect to the Eclipse test server (note that you may see messages that other users publish)
 u, err := url.Parse("mqtt://mqtt.eclipseprojects.io:1883")
 if err != nil {
 	panic(err)
 }
 
 cliCfg := autopaho.ClientConfig{
-	BrokerUrls: []*url.URL{u},
+	ServerUrls: []*url.URL{u},
 	KeepAlive:  20, // Keepalive message should be sent every 20 seconds
 	// CleanStartOnInitialConnection defaults to false. Setting this to true will clear the session on the first connection.
 	CleanStartOnInitialConnection: false,
 	// SessionExpiryInterval - Seconds that a session will survive after disconnection.
 	// It is important to set this because otherwise, any queued messages will be lost if the connection drops and
-	// the broker will not queue messages while it is down. The specific setting will depend upon your needs
+	// the server will not queue messages while it is down. The specific setting will depend upon your needs
 	// (60 = 1 minute, 3600 = 1 hour, 86400 = one day, 0xFFFFFFFE = 136 years, 0xFFFFFFFF = don't expire)
 	SessionExpiryInterval: 60,
 	OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
@@ -136,7 +136,7 @@ Note: The logs can be easier fo follow if you comment out the `log_type all` in 
 ## Queue
 
 When publishing a message, there are a number of things that can go wrong; for example:
-* The connection to the broker may drop (or not have even come up before your initial message is ready)
+* The connection to the server may drop (or not have even come up before your initial message is ready)
 * The application might be restarted (but you still want messages previously published to be delivered)
 * `ConnectionManager.Publish` may timeout because you are attempting to publish a lot of messages in a short space of time.
 

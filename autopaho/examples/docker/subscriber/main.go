@@ -1,6 +1,6 @@
 package main
 
-// Connect to the broker, subscribe, and write messages received to a file
+// Connect to the server, subscribe, and write messages received to a file
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func main() {
 	}
 
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls:                    []*url.URL{cfg.serverURL},
+		ServerUrls:                    []*url.URL{cfg.serverURL},
 		KeepAlive:                     cfg.keepAlive,
 		CleanStartOnInitialConnection: false, // the default
 		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
@@ -84,7 +84,7 @@ func main() {
 	}
 
 	//
-	// Connect to the broker
+	// Connect to the server
 	//
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

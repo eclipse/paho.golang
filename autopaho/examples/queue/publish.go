@@ -22,9 +22,9 @@ type queueWaitForEmpty interface {
 	WaitForEmpty() chan struct{}
 }
 
-// publish connects to the broker and publishes the requested number of messages
+// publish connects to the server and publishes the requested number of messages
 // The body of each message will be the Varint encoded message count (1 - msgCount)
-func publish(ctx context.Context, brokerURL *url.URL, msgCount uint64) {
+func publish(ctx context.Context, serverURL *url.URL, msgCount uint64) {
 	dropAt := make(map[uint64]bool)
 	for _, i := range disconnectAtCount {
 		dropAt[i] = true
@@ -55,7 +55,7 @@ func publish(ctx context.Context, brokerURL *url.URL, msgCount uint64) {
 
 	cliCfg := autopaho.ClientConfig{
 		Queue:                         q,
-		BrokerUrls:                    []*url.URL{brokerURL},
+		ServerUrls:                    []*url.URL{serverURL},
 		KeepAlive:                     20,   // Keepalive message should be sent every 20 seconds
 		CleanStartOnInitialConnection: true, // Previous tests should not contaminate this one!
 		SessionExpiryInterval:         60,   // If connection drops we want session to remain live whilst we reconnect

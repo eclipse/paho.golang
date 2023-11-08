@@ -39,7 +39,7 @@ func (e *errorHandler) onClientError(err error) {
 }
 
 // onClientError called by the paho library when the server requests a disconnection (for example, as part of a
-// clean broker shutdown). We want to begin attempting to reconnect when this occurs (and pass a detectable error
+// clean server shutdown). We want to begin attempting to reconnect when this occurs (and pass a detectable error
 // to the user)
 func (e *errorHandler) onServerDisconnect(d *paho.Disconnect) {
 	e.handleError(&DisconnectError{err: fmt.Sprintf("server requested disconnect (reason: %d)", d.ReasonCode)})

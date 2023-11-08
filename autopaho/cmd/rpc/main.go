@@ -124,7 +124,7 @@ func main() {
 	listener(cfg.topic)
 
 	//
-	// Connect to the broker
+	// Connect to the server
 	//
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

@@ -23,14 +23,14 @@ import (
 
 // Network (establishing connection) functionality for AutoPaho
 
-// establishBrokerConnection - establishes a connection with the broker retrying until successful or the
+// establishServerConnection - establishes a connection with the MQTT server retrying until successful or the
 // context is cancelled (in which case nil will be returned).
-func establishBrokerConnection(ctx context.Context, cfg ClientConfig, firstConnection bool) (*paho.Client, *paho.Connack) {
+func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConnection bool) (*paho.Client, *paho.Connack) {
 	// Note: We do not touch b.cli in order to avoid adding thread safety issues.
 	var err error
 
 	for {
-		for _, u := range cfg.BrokerUrls {
+		for _, u := range cfg.ServerUrls {
 			connectionCtx, cancelConnCtx := context.WithTimeout(ctx, cfg.ConnectTimeout)
 
 			if cfg.AttemptConnection != nil { // Use custom function if it is provided
@@ -98,7 +98,7 @@ func establishBrokerConnection(ctx context.Context, cfg ClientConfig, firstConne
 	}
 }
 
-// attemptTCPConnection - makes a single attempt at establishing a TCP connection with the broker
+// attemptTCPConnection - makes a single attempt at establishing a TCP connection with the server
 func attemptTCPConnection(ctx context.Context, address string) (net.Conn, error) {
 	allProxy := os.Getenv("all_proxy")
 	if len(allProxy) == 0 {
@@ -109,7 +109,7 @@ func attemptTCPConnection(ctx context.Context, address string) (net.Conn, error)
 	return proxyDialer.Dial("tcp", address)
 }
 
-// attemptTLSConnection - makes a single attempt at establishing a TLS connection with the broker
+// attemptTLSConnection - makes a single attempt at establishing a TLS connection with the server
 func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address string) (net.Conn, error) {
 	allProxy := os.Getenv("all_proxy")
 	if len(allProxy) == 0 {
@@ -137,16 +137,16 @@ func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address strin
 	return packets.NewThreadSafeConn(tlsConn), err
 }
 
-// attemptWebsocketConnection - makes a single attempt at establishing a websocket connection with the broker
-func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebSocketConfig, brokerURL *url.URL) (net.Conn, error) {
+// attemptWebsocketConnection - makes a single attempt at establishing a websocket connection with the server
+func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebSocketConfig, serverURL *url.URL) (net.Conn, error) {
 	var dialer *websocket.Dialer
 	var requestHeader http.Header
 	if cfg != nil {
 		if cfg.Dialer != nil {
-			dialer = cfg.Dialer(brokerURL, tlsc)
+			dialer = cfg.Dialer(serverURL, tlsc)
 		}
 		if cfg.Header != nil {
-			requestHeader = cfg.Header(brokerURL, tlsc)
+			requestHeader = cfg.Header(serverURL, tlsc)
 		}
 	}
 	if dialer == nil {
@@ -155,7 +155,7 @@ func attemptWebsocketConnection(ctx context.Context, tlsc *tls.Config, cfg *WebS
 		d.Subprotocols = []string{"mqtt"}
 		dialer = &d
 	}
-	ws, _, err := dialer.DialContext(ctx, brokerURL.String(), requestHeader)
+	ws, _, err := dialer.DialContext(ctx, serverURL.String(), requestHeader)
 	if err != nil {
 		return nil, fmt.Errorf("websocket connection failed: %w", err)
 	}
