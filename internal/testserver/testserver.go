@@ -20,13 +20,13 @@ import (
 //
 // Testing an MQTT client without a server is difficult, using a real server complicates the setup (e.g. server must
 // be available, how do we simulate disconnection, managing timing of ACKs, etc). A workaround is to implement limited
-// broker functions specifically for testing.
+// MQTT server functions specifically for testing.
 //
 // `paho` goes some way towards this in `server_test.go` but that implementation only returns predetermined packets which
 // makes testing persistence of the session state difficult. This implementation goes further and permits the client
 // to subscribe to messages that it, itself, publishes.
 //
-// To simplify testing of the session state, the test broker will automatically disconnect if it receives messages that
+// To simplify testing of the session state, the test server will automatically disconnect if it receives messages that
 // are one of the following strings:
 //
 // * `CloseOnPublishReceived` - Disconnects when the `PUBLISH` message has been received (before any response) - Warning this will result in a loop if the client resends the message.
@@ -89,7 +89,7 @@ func NewStateInfo(sent *packets.ControlPacket, qos byte, topic string, payload [
 	}
 }
 
-// Instance an instance of the test broker
+// Instance an instance of the test server
 // Note that many variables are not mutex protected (because they are private and only accessed from one goroutine)
 type Instance struct {
 	logger          Logger // Used to output status info to assist with debugging
@@ -138,7 +138,7 @@ func (i *Instance) Connected() bool {
 	return i.connected.Load()
 }
 
-// Connect establishes a connection to the test broker
+// Connect establishes a connection to the test server
 // Note that this can fail!
 // Returns a net.Conn (to pass to paho), a channel that will be closed when connection has shutdown and
 // an error (if any).

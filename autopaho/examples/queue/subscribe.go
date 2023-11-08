@@ -12,13 +12,13 @@ import (
 	"github.com/eclipse/paho.golang/paho"
 )
 
-// subscribe connects to the broker and subscribes to the test topic. It then expects to receive
+// subscribe connects to the server and subscribes to the test topic. It then expects to receive
 // msgCount messages each containing the varint encoded message count.
 // Generally messages should be received once and in order, but this is only guaranteed where the message number is even
 // (because publish uses QOS2 for those).
 // ready will be closed when we are ready to receive messages
 // Exists when all expected messages have been received
-func subscribe(ctx context.Context, brokerURL *url.URL, msgCount uint64, ready chan struct{}) {
+func subscribe(ctx context.Context, serverURL *url.URL, msgCount uint64, ready chan struct{}) {
 	var msgRcvCount uint64
 	msgReceived := make(map[uint64]bool, msgCount)
 	allReceived := make(chan struct{})
@@ -26,7 +26,7 @@ func subscribe(ctx context.Context, brokerURL *url.URL, msgCount uint64, ready c
 	ping := make(chan uint64)
 
 	cliCfg := autopaho.ClientConfig{
-		BrokerUrls:                    []*url.URL{brokerURL},
+		ServerUrls:                    []*url.URL{serverURL},
 		KeepAlive:                     20,   // Keepalive message should be sent every 20 seconds
 		CleanStartOnInitialConnection: true, // Previous tests should not contaminate this one!
 		SessionExpiryInterval:         60,   // If connection drops we want session to remain live whilst we reconnect
