@@ -222,6 +222,9 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	if cfg.ConnectTimeout == 0 {
 		cfg.ConnectTimeout = 10 * time.Second
 	}
+	if len(cfg.BrokerUrls) == 0 { // This would cause an infinite loop
+		return nil, errors.New("no server urls provided")
+	}
 	if cfg.Queue == nil {
 		cfg.Queue = memory.New()
 	}
