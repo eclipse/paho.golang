@@ -287,13 +287,15 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		c.serverProps.SharedSubAvailable = ca.Properties.SharedSubAvailable
 	}
 
-	c.debug.Println("received CONNACK, starting PingHandler")
-	c.workers.Add(1)
-	go func() {
-		defer c.workers.Done()
-		defer c.debug.Println("returning from ping handler worker")
-		c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
-	}()
+	if keepalive > 0 { // "Keep Alive value of 0 has the effect of turning off..."
+		c.debug.Println("received CONNACK, starting PingHandler")
+		c.workers.Add(1)
+		go func() {
+			defer c.workers.Done()
+			defer c.debug.Println("returning from ping handler worker")
+			c.PingHandler.Start(c.Conn, time.Duration(keepalive)*time.Second)
+		}()
+	}
 
 	c.debug.Println("starting publish packets loop")
 	c.workers.Add(1)
