@@ -49,8 +49,8 @@ cliCfg := autopaho.ClientConfig{
 	ClientConfig: paho.ClientConfig{
 		// If you are using QOS 1/2, then it's important to specify a client id (which must be unique)
 		ClientID: clientID,
-		// The Router will receive any inbound messages (SingleHandlerRouter ignores the topic and always calls the function)
-		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+		// The Router will receive any inbound messages (the router can map for you or just pass messages to a single handler)
+		Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 			fmt.Printf("received message on topic %s; body: %s (retain: %t)\n", m.Topic, m.Payload, m.Retain)
 		}),
 		OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },

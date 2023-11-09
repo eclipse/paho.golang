@@ -32,7 +32,7 @@ func main() {
 	}
 
 	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+		Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 			msgChan <- m
 		}),
 		Conn: conn,

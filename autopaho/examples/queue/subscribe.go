@@ -52,7 +52,7 @@ func subscribe(ctx context.Context, serverURL *url.URL, msgCount uint64, ready c
 		// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
 		ClientConfig: paho.ClientConfig{
 			ClientID: "TestSub",
-			Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
+			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
 				msgNo, err := binary.ReadUvarint(bytes.NewReader(m.Payload))
 				if err != nil {
 					panic(err) // Message corruption or something else is using our topic!
