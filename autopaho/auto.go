@@ -287,7 +287,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 			if firstConnection {
 				c.queueWg.Add(1)
 				go func(ctx context.Context) {
-					c.managePublishQueue(ctx)
+					_ = c.managePublishQueue(ctx)
 					c.queueWg.Done()
 				}(innerCtx)
 				firstConnection = false
@@ -439,18 +439,19 @@ func (c *ConnectionManager) PublishViaQueue(ctx context.Context, p *QueuePublish
 func (c *ConnectionManager) TerminateConnectionForTest() {
 	c.mu.Lock()
 	if c.cli != nil {
-		c.cli.Conn.Close()
+		_ = c.cli.Conn.Close()
 	}
 	c.mu.Unlock()
 }
 
-// ResetUsernamePassword clears any configured username and password on the client configuration
+// managePublishQueue sends messages from the publish queue.
+// blocks until the context is cancelled.
 func (c *ConnectionManager) managePublishQueue(ctx context.Context) error {
 connectionLoop:
 	for {
 		c.debug.Println("queue AwaitConnection")
 		if err := c.AwaitConnection(ctx); err != nil {
-			return nil
+			return err
 		}
 
 		c.debug.Println("queue got connection")
@@ -476,21 +477,34 @@ connectionLoop:
 
 			// Connection is up, and we have at least one thing to send
 			for {
-				r, err := c.queue.Peek()
+				entry, err := c.queue.Peek() // If this succeeds, we MUST call Remove, Error or Leave
 				if errors.Is(err, queue.ErrEmpty) {
 					c.debug.Println("everything in queue transmitted")
 					continue queueLoop
 				}
-				p, err := packets.ReadPacket(r)
-				_ = r.Close()
-				// Or maybe it gets added to an error queue of some kind?
+				r, err := entry.Reader()
 				if err != nil {
-					c.errors.Printf("error retrieving packet from queue: %s", err)
+					c.errors.Printf("error retrieving reader for queue entry: %s", err)
 					continue
 				}
+
+				p, err := packets.ReadPacket(r)
+				if err != nil {
+					c.errors.Printf("error retrieving packet from queue: %s", err)
+					// If the packet cannot be processed, then we need to remove it from the queue
+					// (ideally into an error queue).
+					if err := entry.Error(); err != nil {
+						c.errors.Printf("error moving queue entry to error state: %s", err)
+					}
+					continue
+				}
+
 				pub, ok := p.Content.(*packets.Publish)
 				if !ok {
 					c.errors.Printf("packet from queue is not a Publish")
+					if qErr := entry.Error(); qErr != nil {
+						c.errors.Printf("error moving queue entry to error state: %s", err)
+					}
 					continue
 				}
 				pub2 := paho.Publish{
@@ -507,11 +521,16 @@ connectionLoop:
 				c.debug.Printf("publishing message from queue with topic %s", pub2.Topic)
 				if _, err = cli.PublishWithOptions(ctx, &pub2, paho.PublishOptions{Method: paho.PublishMethod_AsyncSend}); err != nil {
 					if errors.Is(err, paho.ErrNetworkErrorAfterStored) { // Message in session so remove from queue
-						if dqErr := c.queue.Dequeue(); err != nil {
-							c.errors.Printf("error removing packet from queue: %s", dqErr)
+						if rErr := entry.Remove(); rErr != nil {
+							c.errors.Printf("error removing queue entry: %s", rErr)
+						}
+					} else {
+						if err := entry.Leave(); err != nil { // the message was not sent, so leave it in the queue
+							c.errors.Printf("error leaving queue entry: %s", err)
 						}
 					}
 					c.errors.Printf("error publishing from queue: %s", err)
+
 					// Wait for connection to drop before continuing (small delay before the client processes this)
 					select {
 					case <-ctx.Done():
@@ -520,8 +539,9 @@ connectionLoop:
 					}
 					continue connectionLoop
 				}
-				if err = c.queue.Dequeue(); err != nil {
-					c.errors.Printf("error removing packet from queue: %s", err)
+				if err := entry.Remove(); err != nil { // successfully published
+					c.errors.Printf("error removing queue entry: %s", err)
+					continue
 				}
 			}
 		}

@@ -30,6 +30,7 @@ type Queue struct {
 	path            string
 	prefix          string
 	extension       string
+	errExtension    string
 	queueEmpty      bool              // true is the queue is currently empty
 	waiting         []chan<- struct{} // closed when something arrives in the queue
 	waitingForEmpty []chan<- struct{} // closed when queue is empty
@@ -70,9 +71,10 @@ func New(path string, prefix string, extension string) (*Queue, error) {
 	}
 
 	q := &Queue{
-		path:      path,
-		prefix:    prefix,
-		extension: extension,
+		path:         path,
+		prefix:       prefix,
+		extension:    extension,
+		errExtension: ".corrupt",
 	}
 
 	_, err := q.oldestEntry()
@@ -84,6 +86,15 @@ func New(path string, prefix string, extension string) (*Queue, error) {
 
 	return q, nil
 
+}
+
+// SetErrorExtension sets the extension to use when an error is flagged with the file
+// The extension defaults to ".corrupt" (which should be fine in most situations)
+// This must not be the same as the extension passed to New.
+func (q *Queue) SetErrorExtension(ext string) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.errExtension = ext
 }
 
 // Wait returns a channel that is closed when there is something in the queue
@@ -130,7 +141,7 @@ func (q *Queue) Enqueue(p io.Reader) error {
 }
 
 // Peek retrieves the oldest item from the queue (without removing it)
-func (q *Queue) Peek() (io.ReadCloser, error) {
+func (q *Queue) Peek() (queue.Entry, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if q.queueEmpty {
@@ -139,28 +150,13 @@ func (q *Queue) Peek() (io.ReadCloser, error) {
 	e, err := q.get()
 	if err == io.EOF {
 		q.queueEmpty = true
-		return nil, queue.ErrEmpty
-	}
-	return e, err
-}
-
-// Dequeue removes the oldest item from the queue (without returning it)
-func (q *Queue) Dequeue() error {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	if q.queueEmpty {
-		return queue.ErrEmpty
-	}
-	err := q.dequeue()
-	if err == io.EOF {
-		q.queueEmpty = true
 		for _, c := range q.waitingForEmpty {
 			close(c)
 		}
 		q.waitingForEmpty = q.waitingForEmpty[:0]
-		return queue.ErrEmpty
+		return nil, queue.ErrEmpty
 	}
-	return err
+	return e, err
 }
 
 // put writes out an item to disk
@@ -176,7 +172,6 @@ func (q *Queue) put(p io.Reader) error {
 		return err
 	}
 	if err = f.Close(); err != nil {
-		f.Close()
 		_ = os.Remove(f.Name()) // Attempt to remove the partial file (not much we can do if this fails)
 		return err
 	}
@@ -184,28 +179,17 @@ func (q *Queue) put(p io.Reader) error {
 }
 
 // get() returns a ReadCloser that accesses the oldest file available
-func (q *Queue) get() (io.ReadCloser, error) {
+// caller must hold lock on mu
+func (q *Queue) get() (entry, error) {
 	fn, err := q.oldestEntry()
 	if err != nil {
-		return nil, err
+		return entry{}, err
 	}
 	f, err := os.Open(fn)
 	if err != nil {
-		return nil, err
+		return entry{}, err
 	}
-	return f, nil
-}
-
-// dequeue() removes the oldest file available
-func (q *Queue) dequeue() error {
-	fn, err := q.oldestEntry()
-	if err != nil {
-		return err
-	}
-	if err = os.Remove(fn); err != nil {
-		return err
-	}
-	return nil
+	return entry{f: f, errExt: q.errExtension}, nil
 }
 
 // oldestEntry returns the filename of the oldest entry in the queue (if any - io.EOF means none)
@@ -244,4 +228,50 @@ func (q *Queue) oldestEntry() (string, error) {
 		return "", io.EOF
 	}
 	return oldFn, nil
+}
+
+// entry is used to return a queue entry from Peek
+type entry struct {
+	f      *os.File
+	errExt string
+}
+
+// Reader provides access to the file contents
+func (e entry) Reader() (io.Reader, error) {
+	return e.f, nil
+}
+
+// Leave closes the entry leaving it in the queue (will be returned on subsequent calls to Peek)
+func (e entry) Leave() error {
+	return e.f.Close()
+}
+
+// Remove this entry from the queue
+func (e entry) Remove() error {
+	cErr := e.f.Close() // Want to attempt to remove the file regardless of any errors here
+	if err := os.Remove(e.f.Name()); err != nil {
+		return err
+	}
+	if cErr != nil {
+		return cErr
+	}
+	return nil
+}
+
+// Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
+func (e entry) Error() error {
+	cErr := e.f.Close() // Want to attempt to move the file regardless of any errors here
+
+	// Attempt to add an extension so the file no longer be found by Peek
+	if err := os.Rename(e.f.Name(), e.f.Name()+e.errExt); err != nil {
+		// Attempt to remove the file (important that we don't end up in an infinite loop retrieving the same file!)
+		if rErr := os.Remove(e.f.Name()); rErr != nil {
+			return err // Error from rename is best thing to return
+		}
+		return fmt.Errorf("rename failed so file deleted: %w", err)
+	}
+	if cErr != nil {
+		return cErr
+	}
+	return nil
 }

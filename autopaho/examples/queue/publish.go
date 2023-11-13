@@ -44,11 +44,14 @@ func publish(ctx context.Context, serverURL *url.URL, msgCount uint64) {
 
 	// Previous runs of the test may have left messages queued; remove them!
 	for {
-		err := q.Dequeue()
+		entry, err := q.Peek()
 		if errors.Is(err, queue.ErrEmpty) {
 			break
 		}
 		if err != nil {
+			panic(err)
+		}
+		if err := entry.Remove(); err != nil {
 			panic(err)
 		}
 	}

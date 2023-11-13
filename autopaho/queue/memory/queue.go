@@ -38,7 +38,7 @@ func (q *Queue) Wait() chan struct{} {
 	return c
 }
 
-// WaitForEmpty returns a channel that is closed when the queue is empty
+// WaitForEmpty returns a channel which will be closed when the queue is empty
 func (q *Queue) WaitForEmpty() chan struct{} {
 	c := make(chan struct{})
 	q.mu.Lock()
@@ -70,27 +70,58 @@ func (q *Queue) Enqueue(p io.Reader) error {
 }
 
 // Peek retrieves the oldest item from the queue (without removing it)
-func (q *Queue) Peek() (io.ReadCloser, error) {
+func (q *Queue) Peek() (queue.Entry, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.messages) == 0 {
 		return nil, queue.ErrEmpty
 	}
-	return io.NopCloser(bytes.NewReader(q.messages[0])), nil
+	// Queue implements Entry directly (as this always references q.messages[0]
+	return q, nil
 }
 
-// Dequeue removes the oldest item from the queue (without returning it)
-func (q *Queue) Dequeue() error {
+// Reader implements Entry.Reader - As the entry will always be the first item in the queue this is implemented
+// against Queue rather than as a separate struct.
+func (q *Queue) Reader() (io.Reader, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.messages) == 0 {
+		return nil, queue.ErrEmpty
+	}
+	return bytes.NewReader(q.messages[0]), nil
+}
+
+// Leave implements Entry.Leave - the entry (will be returned on subsequent calls to Peek)
+func (q *Queue) Leave() error {
+	return nil // No action (item is already in the queue and there is nothing to close)
+}
+
+// Remove implements Entry.Remove this entry from the queue
+func (q *Queue) Remove() error {
+	return q.remove()
+}
+
+// Error implements Entry.Error - Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
+func (q *Queue) Error() error {
+	return q.remove() // No way for us to flag an error so we just remove the item from the queue
+}
+
+// remove removes the first item in the queue.
+func (q *Queue) remove() error {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	initialLen := len(q.messages)
+	if initialLen > 0 {
+		q.messages = q.messages[1:]
+	}
+	if initialLen <= 1 { // Queue is now, or was already, empty
 		for _, c := range q.waitingForEmpty {
 			close(c)
 		}
 		q.waitingForEmpty = q.waitingForEmpty[:0]
-
-		return queue.ErrEmpty
+		if initialLen == 0 {
+			return queue.ErrEmpty
+		}
 	}
-	q.messages = q.messages[1:]
 	return nil
 }
