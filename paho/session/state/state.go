@@ -396,7 +396,7 @@ func (s *State) endClientGenerated(packetID uint16, recv *packets.ControlPacket)
 		// Outgoing publish messages will be in the store (replaced with PUBREL that is sent)
 		if cg.packetType == packets.PUBLISH || cg.packetType == packets.PUBREL {
 			if qErr := s.inflight.Release(); qErr != nil {
-				s.errors.Printf("quota release due to %d: %s", recv.PacketType(), qErr)
+				s.errors.Printf("quota release due to %s: %s", recv.PacketType(), qErr)
 			}
 			if err := s.clientStore.Delete(packetID); err != nil {
 				s.errors.Printf("failed to remove message %d from store: %s", packetID, err)
