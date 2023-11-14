@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/url"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/eclipse/paho.golang/autopaho/queue/memory"
 	"github.com/eclipse/paho.golang/internal/testserver"
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
@@ -190,5 +193,137 @@ func TestQueuedMessages(t *testing.T) {
 		if string(receivedPublish[i-1].Payload) != exp {
 			t.Errorf("expected %s, got %s", exp, receivedPublish[i-1])
 		}
+	}
+}
+
+// TestPreloadPublish begin connection with PUBLISH packets in queue and a slow server
+// Replicates issue #196 - this was caused by the wait for receive maximum slot taking
+// longer than paho.PacketTimeout
+func TestPreloadPublish(t *testing.T) {
+	t.Parallel()
+
+	// Bring up server
+	server, _ := url.Parse(dummyURL)
+	serverLogger := paholog.NewTestLogger(t, "testServer:")
+	logger := paholog.NewTestLogger(t, "test:")
+
+	ts := testserver.New(serverLogger)
+
+	var publishReceived int32
+	gotMessage := make(map[string]bool)
+	got5Messages := make(chan struct{})
+
+	ts.SetPacketReceivedCallback(func(cp *packets.ControlPacket) error {
+		if cp.Type != packets.PUBLISH {
+			return nil // Ignore packets other than PUBLISH
+		}
+		pub := cp.Content.(*packets.Publish)
+		gotMessage[pub.Topic] = true
+		if len(gotMessage) == 5 {
+			gotMessage["z"] = true // stop the above from being true if called again
+			close(got5Messages)
+		}
+
+		if publishReceived == 0 { // test server process in one go routine, so this will block all initial PUBLISH requests
+			time.Sleep(shortDelay) // delay ack
+		}
+		publishReceived++
+		return nil
+	})
+	ts.SetConnectCallback(func(cp *packets.Connect, cap *packets.Connack) {
+		rm := uint16(2)
+		cap.Properties.ReceiveMaximum = &rm
+	})
+
+	q := memory.New()
+	for i := 0; i < 5; i++ {
+		r, w := io.Pipe()
+
+		go func() {
+			publish := packets.Publish{
+				Topic:   strconv.Itoa(i),
+				Payload: []byte("packet: " + strconv.Itoa(i)),
+				QoS:     1,
+			}
+			_, _ = publish.WriteTo(w)
+			w.Close()
+		}()
+
+		if err := q.Enqueue(r); err != nil {
+			t.Fatalf("failed to enqueue: %s", err)
+		}
+	}
+
+	// custom session because we don't want the client to close it when the connection is lost
+	var tsDone chan struct{} // Set on AttemptConnection and closed when that test server connection is done
+	session := state.NewInMemory()
+	session.SetErrorLogger(paholog.NewTestLogger(t, "sessionError:"))
+	session.SetDebugLogger(paholog.NewTestLogger(t, "sessionDebug:"))
+	defer session.Close()
+	config := ClientConfig{
+		ServerUrls:        []*url.URL{server},
+		KeepAlive:         0,
+		ConnectRetryDelay: shortDelay, // Retry connection very quickly!
+		ConnectTimeout:    shortDelay, // Connection should come up very quickly
+		Queue:             q,
+		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
+			var conn net.Conn
+			var err error
+			conn, tsDone, err = ts.Connect(ctx)
+			return conn, err
+		},
+		Debug:                         logger,
+		PahoDebug:                     logger,
+		PahoErrors:                    logger,
+		CleanStartOnInitialConnection: false, // Want session to stay up (this is the default)
+		SessionExpiryInterval:         600,   // If 0 then the state will be removed when the connection drops
+		ClientConfig: paho.ClientConfig{
+			ClientID:      "test",
+			Session:       session,
+			Router:        paho.NewStandardRouter(),
+			PacketTimeout: 250 * time.Millisecond, // test server should be able to respond very quickly!
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	cm, err := NewConnection(ctx, config)
+	if err != nil {
+		t.Fatalf("expected NewConnection success: %s", err)
+	}
+
+	// Wait for all messages to be received
+	select {
+	case <-got5Messages:
+	case <-time.After(5 * longerDelay): // Need a bit longer...
+		t.Fatalf("timeout awaiting messages (received %d)", publishReceived)
+	}
+
+	// Disconnect
+	disconnectErr := make(chan error)
+	go func() {
+		disconnectErr <- cm.Disconnect(ctx)
+	}()
+	select {
+	case err = <-disconnectErr:
+		if err != nil {
+			t.Fatalf("Disconnect returned error: %s", err)
+		}
+	case <-time.After(longerDelay):
+		t.Fatal("Disconnect should return relatively quickly")
+	}
+
+	// Connection manager should be Done
+	select {
+	case <-cm.Done():
+	case <-time.After(shortDelay):
+		t.Fatal("connection manager should be done after Disconnect Called")
+	}
+
+	// The test server should have picked up the dropped connection
+	select {
+	case <-tsDone:
+	case <-time.After(shortDelay):
+		t.Fatal("test server did not shutdown within expected time")
 	}
 }

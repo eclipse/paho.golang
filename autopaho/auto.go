@@ -520,24 +520,27 @@ connectionLoop:
 				// and then return (at this point any pub1+ publish will be in the session so will be retried)
 				c.debug.Printf("publishing message from queue with topic %s", pub2.Topic)
 				if _, err = cli.PublishWithOptions(ctx, &pub2, paho.PublishOptions{Method: paho.PublishMethod_AsyncSend}); err != nil {
+					c.errors.Printf("error publishing from queue: %s", err)
 					if errors.Is(err, paho.ErrNetworkErrorAfterStored) { // Message in session so remove from queue
-						if rErr := entry.Remove(); rErr != nil {
-							c.errors.Printf("error removing queue entry: %s", rErr)
+						if err := entry.Remove(); err != nil {
+							c.errors.Printf("error removing queue entry: %s", err)
 						}
 					} else {
 						if err := entry.Leave(); err != nil { // the message was not sent, so leave it in the queue
 							c.errors.Printf("error leaving queue entry: %s", err)
 						}
 					}
-					c.errors.Printf("error publishing from queue: %s", err)
 
-					// Wait for connection to drop before continuing (small delay before the client processes this)
+					// The error might be fatal (connection will drop) or could be temporary (i.e. PacketTimeout exceeded)
+					// as a result we currently retry unless we know the connection has dropped, or it's time to exit
 					select {
 					case <-ctx.Done():
 						return ctx.Err()
 					case <-connDown:
+						continue connectionLoop
+					default: // retry
+						continue
 					}
-					continue connectionLoop
 				}
 				if err := entry.Remove(); err != nil { // successfully published
 					c.errors.Printf("error removing queue entry: %s", err)
