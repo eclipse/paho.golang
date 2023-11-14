@@ -140,6 +140,17 @@ func TestQuotaContext(t *testing.T) {
 	if err := it.Acquire(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("should fail if context cancelled: %v", err)
 	}
+
+	// Slots freed due to the context expiring should be removed
+	// from `waiters` meaning that if we free ons slot we should
+	// be able to acquire another
+	if err := it.Release(); err != nil {
+		t.Fatalf("failed to release slot: %v", err)
+	}
+
+	if err := it.Acquire(ctx); err != nil {
+		t.Fatalf("failed to get slot after one was released: %v", err)
+	}
 }
 
 // TestQuotaLoad tests send quota under load
