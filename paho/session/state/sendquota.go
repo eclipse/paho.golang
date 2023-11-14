@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 )
 
@@ -77,11 +78,18 @@ func (s *sendQuota) acquire(ctx context.Context, noWait bool) error {
 		err = ctx.Err()
 		s.mu.Lock()
 		select {
-		case <-ready:
-			// Acquired the semaphore after we were canceled.  Rather than trying to
+		case <-ready: // If ready then already removed from s.waiters
+			// Acquired the semaphore after we were cancelled. Rather than trying to
 			// fix up the queue, just pretend we didn't notice the cancellation.
 			err = nil
+			fmt.Println("quota released entry but ready so nil error ", s.quota)
 		default:
+			// Remove ourselves from the list of waiters
+			for i, r := range s.waiters {
+				if ready == r {
+					s.waiters = append(s.waiters[:i], s.waiters[i+1:]...)
+				}
+			}
 		}
 		s.mu.Unlock()
 	case <-ready: // Note that quota already accounts for this item
@@ -89,8 +97,7 @@ func (s *sendQuota) acquire(ctx context.Context, noWait bool) error {
 	return err
 }
 
-// Release releases slot for the specified message ID
-// error is for logging only (ref issue #179)
+// Release releases slot
 func (s *sendQuota) Release() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,7 +105,9 @@ func (s *sendQuota) Release() error {
 	if s.quota >= 0 && len(s.waiters) > 0 { // Possible quota could go negative when using noWait
 		close(s.waiters[0])
 		s.waiters = append(s.waiters[:0], s.waiters[1:]...)
-	} else if s.quota < s.initialQuota {
+		return nil
+	}
+	if s.quota < s.initialQuota {
 		s.quota++
 		return nil
 	}
