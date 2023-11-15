@@ -81,8 +81,8 @@ func TestMemoryQueue(t *testing.T) {
 	}
 }
 
-// TestLeaveAndError checks that the Leave and Error functions do what is expected
-func TestLeaveAndError(t *testing.T) {
+// TestLeaveAndQuarantine checks that the Leave and Quarantine functions do what is expected
+func TestLeaveAndQuarantine(t *testing.T) {
 	q := New()
 
 	if _, err := q.Peek(); !errors.Is(err, queue.ErrEmpty) {
@@ -101,14 +101,14 @@ func TestLeaveAndError(t *testing.T) {
 		t.Fatalf("error leaving test entry: %s", err)
 	}
 
-	// Move entry to error state
+	// Quarantine entry
 	if entry, err := q.Peek(); err != nil {
 		t.Fatalf("error peeking test entry: %s", err)
-	} else if err = entry.Error(); err != nil {
+	} else if err = entry.Quarantine(); err != nil {
 		t.Fatalf("error erroring test entry: %s", err)
 	}
 
-	// As the file has been moved to error state is should not be part of the queue
+	// As the file has been moved to quarantine it should not be part of the queue
 	if _, err := q.Peek(); !errors.Is(err, queue.ErrEmpty) {
 		t.Errorf("expected ErrEmpty, got %s", err)
 	}

@@ -477,7 +477,7 @@ connectionLoop:
 
 			// Connection is up, and we have at least one thing to send
 			for {
-				entry, err := c.queue.Peek() // If this succeeds, we MUST call Remove, Error or Leave
+				entry, err := c.queue.Peek() // If this succeeds, we MUST call Remove, Quarantine or Leave
 				if errors.Is(err, queue.ErrEmpty) {
 					c.debug.Println("everything in queue transmitted")
 					continue queueLoop
@@ -493,8 +493,8 @@ connectionLoop:
 					c.errors.Printf("error retrieving packet from queue: %s", err)
 					// If the packet cannot be processed, then we need to remove it from the queue
 					// (ideally into an error queue).
-					if err := entry.Error(); err != nil {
-						c.errors.Printf("error moving queue entry to error state: %s", err)
+					if err := entry.Quarantine(); err != nil {
+						c.errors.Printf("error moving queue entry to quarantine: %s", err)
 					}
 					continue
 				}
@@ -502,8 +502,8 @@ connectionLoop:
 				pub, ok := p.Content.(*packets.Publish)
 				if !ok {
 					c.errors.Printf("packet from queue is not a Publish")
-					if qErr := entry.Error(); qErr != nil {
-						c.errors.Printf("error moving queue entry to error state: %s", err)
+					if qErr := entry.Quarantine(); qErr != nil {
+						c.errors.Printf("error moving queue entry to quarantine: %s", err)
 					}
 					continue
 				}

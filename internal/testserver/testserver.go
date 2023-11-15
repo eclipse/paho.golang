@@ -257,6 +257,11 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 		p := cp.Content.(*packets.Connect)
 		response := packets.NewControlPacket(packets.CONNACK)
 
+		i.sessionExpiryInterval = 0
+		if p.Properties.SessionExpiryInterval != nil {
+			i.sessionExpiryInterval = *p.Properties.SessionExpiryInterval
+		}
+
 		// Session is only retained if there was one (i.sessionExpiryInterval) and connect does not clean it
 		if i.sessionExpiryInterval == 0 || p.CleanStart == true {
 			i.subscriptions = make(map[string]subscription)
@@ -271,10 +276,6 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 			for mid := range i.serverSessionState {
 				i.serverMIDs.Allocate(mid)
 			}
-		}
-		i.sessionExpiryInterval = 0
-		if p.Properties.SessionExpiryInterval != nil {
-			i.sessionExpiryInterval = *p.Properties.SessionExpiryInterval
 		}
 		// We return whatever session expiry interval was requested
 		response.Content.(*packets.Connack).Properties = &packets.Properties{

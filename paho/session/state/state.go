@@ -1,7 +1,6 @@
 package state
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -202,44 +201,51 @@ func (s *State) ConAckReceived(conn io.Writer, cp *packets.Connect, ca *packets.
 		s.debug.Printf("resending message ID %d", id)
 		r, err := s.clientStore.Get(id)
 		if err != nil {
-			s.errors.Printf("failed to load packet %d from store: %s", id, err)
+			s.errors.Printf("failed to load packet %d from client store: %s", id, err)
 			continue
 		}
 
-		// The messages being retransmitted form part of the "send quota"; we currently add this without blocking
-		// meaning that inflight messages may exceed Receive Maximum if this has decreased since the last connection.
-		// This means that we should really hold off resending PUBLISH messages in excess of Receive Maximum until
-		// acknowledgment of previous messages is received. However, this appears to be a fairly unusual situation
-		// (receive maximum rarely changes between connections) and implementing a fix will increase complexity.
-		// TODO: Honor Receive Maximum when retransmitting messages.
-		s.inflight.Retransmit() // This will never block (but is needed to block new messages)
-
-		// DUP needs to be set when resending PUBLISH (but there is no real need to fully parse the message, so we don't)
-		fixedHeader := make([]byte, 2)
-		_, err = io.ReadFull(r, fixedHeader)
-		if err != nil {
-			_ = r.Close()
-			return fmt.Errorf("failed to retrieve packet %d from client store: %w", id, err)
+		// DUP needs to be set when resending PUBLISH
+		// Read/parse the full packet, so we can detect corruption (e.g. 0 byte file)
+		p, err := packets.ReadPacket(r)
+		if cErr := r.Close(); cErr != nil {
+			s.errors.Printf("failed to close stored client packet %d: %s", id, cErr)
 		}
-		packetType := fixedHeader[0] >> 4
-		switch packetType {
+		if err != nil { // If the packet cannot be read, we quarantine it; otherwise we may retry infinitely.
+			if err := s.clientStore.Quarantine(id); err != nil {
+				s.errors.Printf("failed to quarantine packet %d from client store: %s", id, err)
+			}
+			s.errors.Printf("failed to retrieve/parse packet %d from client store: %s", id, err)
+			continue
+		}
+
+		switch p.Type {
 		case packets.PUBLISH:
-			fixedHeader[0] |= 1 << 3 // Set the DUP flag
+			pub := p.Content.(*packets.Publish)
+			pub.Duplicate = true
 		case packets.PUBREL:
 		default:
-			return fmt.Errorf("unexpected packet type %d (for packet identifier %d) in client store", packetType, id)
+			if err := s.clientStore.Quarantine(id); err != nil {
+				s.errors.Printf("failed to quarantine packet %d from client store: %s", id, err)
+			}
+			s.errors.Printf("unexpected packet type %d (for packet identifier %d) in client store", p.Type, id)
+			continue
 		}
-		_, err = io.Copy(conn, io.MultiReader(bytes.NewReader(fixedHeader), r))
-		_ = r.Close()
-		if err != nil {
+
+		// The messages being retransmitted form part of the "send quota"; however, as per the V5 spec,
+		// the limit does not apply to messages being resent (the quota can go under 0)
+		s.inflight.Retransmit() // This will never block (but is needed to block new messages)
+
+		// Any failure from this point should result in loss of connection (so fatal)
+		if _, err := p.WriteTo(conn); err != nil {
 			s.debug.Printf("retransmitting of identifier %d failed: %s", id, err)
 			return fmt.Errorf("failed to retransmit message (%d): %w", id, err)
 		}
 		s.debug.Printf("retransmitted message with identifier %d", id)
-		// On initial connection, the packet needs to be added to our record of client generated packets.
+		// On initial connection, the packet needs to be added to our record of client-generated packets.
 		if _, ok := s.clientPackets[id]; !ok {
 			s.clientPackets[id] = clientGenerated{
-				packetType:   packetType,
+				packetType:   p.Type,
 				responseChan: make(chan packets.ControlPacket, 1), // Nothing will wait on this
 			}
 		}
@@ -259,7 +265,7 @@ func (s *State) loadServerSession(ca *packets.Connack) error {
 	for _, id := range ids {
 		r, err := s.serverStore.Get(id)
 		if err != nil {
-			s.errors.Printf("failed to load packet %d from store: %s", id, err)
+			s.errors.Printf("failed to load packet %d from server store: %s", id, err)
 			continue
 		}
 		// We only need to know the packet type so there is no need to process the entire packet
@@ -267,7 +273,11 @@ func (s *State) loadServerSession(ca *packets.Connack) error {
 		_, err = r.Read(byte1)
 		_ = r.Close()
 		if err != nil {
-			return fmt.Errorf("failed to retrieve packet %d from server store: %w", id, err)
+			if err := s.serverStore.Quarantine(id); err != nil {
+				s.errors.Printf("failed to quarantine packet %d from server store (failed to read): %s", id, err)
+			}
+			s.errors.Printf("packet %d from server store could not be read: %s", id, err)
+			continue // don't want to fail so quarantine and continue is the best we can do
 		}
 		packetType := byte1[0] >> 4
 		switch packetType {
@@ -276,7 +286,11 @@ func (s *State) loadServerSession(ca *packets.Connack) error {
 		case packets.PUBREC:
 			s.serverPackets[id] = packets.PUBREC
 		default:
-			return fmt.Errorf("unexpected packet type %d (for packet identifier %d) in server store", packetType, id)
+			if err := s.serverStore.Quarantine(id); err != nil {
+				s.errors.Printf("failed to quarantine packet %d from server store: %s", id, err)
+			}
+			s.errors.Printf("packet %d from server store had unexpected type %d", id, packetType)
+			continue // don't want to fail so quarantine and continue is the best we can do
 		}
 	}
 	return nil
