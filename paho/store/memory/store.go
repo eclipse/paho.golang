@@ -77,6 +77,12 @@ func (m *Store) Delete(id uint16) error {
 	return nil
 }
 
+// Quarantine is called if a corrupt packet is detected.
+// There is little we can do other than deleting the packet.
+func (m *Store) Quarantine(id uint16) error {
+	return m.Delete(id)
+}
+
 // List returns packet IDs in the order they were Put
 func (m *Store) List() ([]uint16, error) {
 	m.Lock()

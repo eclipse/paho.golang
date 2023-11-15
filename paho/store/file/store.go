@@ -15,6 +15,7 @@ const (
 	folderPermissions = os.FileMode(0770)
 	filePermissions   = os.FileMode(0666)
 	tmpExtension      = ".tmp"
+	corruptExtension  = ".CORRUPT" // quarantined files will be given this extension
 )
 
 // New creates a file Store. Note that a file is written, read and deleted as part of this process to check that the
@@ -74,19 +75,23 @@ type Store struct {
 func (s *Store) Put(packetID uint16, packetType byte, w io.WriterTo) error {
 	s.Lock()
 	defer s.Unlock()
-	tmpFn := s.tmpPathForId(packetID)
 
-	f, err := os.OpenFile(tmpFn, os.O_RDWR|os.O_CREATE|os.O_TRUNC, filePermissions)
+	f, err := os.CreateTemp(s.path, s.fileNamePrefix(packetID)+"-*"+s.extension+tmpExtension)
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
+	tmpFn := f.Name()
 	if _, err = w.WriteTo(f); err != nil {
+		f.Close()
+		_ = os.Remove(tmpFn)
 		return fmt.Errorf("failed to write packet to temp file: %w", err)
 	}
 	if err = f.Close(); err != nil {
+		_ = os.Remove(tmpFn)
 		return fmt.Errorf("failed to close temp file: %w", err)
 	}
-	if err = os.Rename(tmpFn, s.pathForId(packetID)); err != nil {
+	if err = os.Rename(tmpFn, s.filePathForId(packetID)); err != nil {
+		_ = os.Remove(tmpFn)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 	return nil
@@ -97,7 +102,7 @@ func (s *Store) Put(packetID uint16, packetType byte, w io.WriterTo) error {
 func (s *Store) Get(packetID uint16) (io.ReadCloser, error) {
 	s.Lock()
 	defer s.Unlock()
-	f, err := os.OpenFile(s.pathForId(packetID), os.O_RDONLY, 0)
+	f, err := os.OpenFile(s.filePathForId(packetID), os.O_RDONLY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open packet file: %w", err)
 	}
@@ -109,6 +114,28 @@ func (s *Store) Delete(id uint16) error {
 	s.Lock()
 	defer s.Unlock()
 	return s.delete(id)
+}
+
+// Quarantine is called if a corrupt packet is detected.
+// There is little we can do other than deleting the packet.
+func (s *Store) Quarantine(id uint16) error {
+	s.Lock()
+	defer s.Unlock()
+	f, err := os.CreateTemp(s.path, s.fileNamePrefix(id)+"-*"+s.extension+corruptExtension)
+	if err != nil {
+		s.delete(id) // delete the file (otherwise it may be sent on every reconnection)
+		return fmt.Errorf("failed to create quarantine file: %w", err)
+	}
+	tmpFn := f.Name()
+	if err := f.Close(); err != nil {
+		s.delete(id) // delete the file (otherwise it may be sent on every reconnection)
+		return fmt.Errorf("failed to close newly created quarantine file: %w", err)
+	}
+	if err := os.Rename(s.filePathForId(id), tmpFn); err != nil {
+		s.delete(id) // delete the file (otherwise it may be sent on every reconnection)
+		return fmt.Errorf("failed to move packet into quarantine: %w", err)
+	}
+	return nil
 }
 
 type idAndModTime struct {
@@ -188,18 +215,18 @@ func (s *Store) list() ([]uint16, error) {
 // delete removes the message with the specified store ID
 // caller must gain any required locks
 func (s *Store) delete(id uint16) error {
-	if err := os.Remove(s.pathForId(id)); err != nil {
+	if err := os.Remove(s.filePathForId(id)); err != nil {
 		return fmt.Errorf("failed to remove packet file: %w", err)
 	}
 	return nil
 }
 
-// pathForId returns the full path of the file used to store info for the passed in packet id
-func (s *Store) pathForId(packetID uint16) string {
-	return filepath.Join(s.path, s.prefix+strconv.FormatInt(int64(packetID), 10)+s.extension)
+// filePathForId returns the full path of the file used to store info for the passed in packet id
+func (s *Store) filePathForId(packetID uint16) string {
+	return filepath.Join(s.path, s.fileNamePrefix(packetID)+s.extension)
 }
 
-// tmpPathForId returns path to a temporary file to be used when writing out a packet
-func (s *Store) tmpPathForId(packetID uint16) string {
-	return filepath.Join(s.path, s.prefix+strconv.FormatInt(int64(packetID), 10)+tmpExtension)
+// fileNamePrefix returns the beginning of the filename for the specified packet ID
+func (s *Store) fileNamePrefix(packetID uint16) string {
+	return s.prefix + strconv.FormatInt(int64(packetID), 10)
 }

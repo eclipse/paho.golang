@@ -12,12 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.golang/autopaho/queue/memory"
+	memqueue "github.com/eclipse/paho.golang/autopaho/queue/memory"
 	"github.com/eclipse/paho.golang/internal/testserver"
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho"
 	paholog "github.com/eclipse/paho.golang/paho/log"
 	"github.com/eclipse/paho.golang/paho/session/state"
+	memstore "github.com/eclipse/paho.golang/paho/store/memory"
 )
 
 //
@@ -66,18 +67,32 @@ func TestQueuedMessages(t *testing.T) {
 
 	var allowConnection atomic.Bool
 
+	// Add a corrupt item to the queue (zero bytes) - this should be logged and ignored
+	q := memqueue.New()
+	if err := q.Enqueue(bytes.NewReader(nil)); err != nil {
+		t.Fatalf("failed to add corrupt zero byte item to queue")
+	}
+
 	// custom session because we don't want the client to close it when the connection is lost
 	var tsDone chan struct{} // Set on AttemptConnection and closed when that test server connection is done
-	session := state.NewInMemory()
+	clientStore := memstore.New()
+	serverStore := memstore.New()
+	session := state.New(clientStore, serverStore)
 	session.SetErrorLogger(paholog.NewTestLogger(t, "sessionError:"))
 	session.SetDebugLogger(paholog.NewTestLogger(t, "sessionDebug:"))
 	defer session.Close()
+
+	// Add a corrupt item to the store (zero bytes) - this should be logged and ignored
+	clientStore.Put(1, packets.PUBLISH, bytes.NewReader(nil))
+	serverStore.Put(1, packets.PUBREC, bytes.NewReader(nil))
+
 	connectCount := 0
 	config := ClientConfig{
 		ServerUrls:        []*url.URL{server},
 		KeepAlive:         60,
 		ConnectRetryDelay: 500 * time.Millisecond, // Retry connection very quickly!
 		ConnectTimeout:    shortDelay,             // Connection should come up very quickly
+		Queue:             q,
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			if !allowConnection.Load() {
 				return nil, fmt.Errorf("some random error")
@@ -94,6 +109,7 @@ func TestQueuedMessages(t *testing.T) {
 			}
 		},
 		Debug:                         logger,
+		Errors:                        logger,
 		PahoDebug:                     logger,
 		PahoErrors:                    logger,
 		CleanStartOnInitialConnection: false, // Want session to stay up (this is the default)

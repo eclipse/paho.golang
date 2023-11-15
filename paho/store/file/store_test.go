@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/eclipse/paho.golang/packets"
@@ -110,6 +111,26 @@ func TestFileStoreNaming(t *testing.T) {
 	if entries[0].Name() != "BlahXX1.txt" {
 		t.Fatalf("filename not as expected; got %s", entries[0].Name())
 	}
+
+	if err := s.Quarantine(1); err != nil {
+		t.Fatalf("failed to Quarantine: %s", err)
+	}
+	entries, err = os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("failed to read dir: %s", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("should be one file; got %#v", entries)
+	}
+	fn := entries[0].Name()
+	if !strings.HasPrefix(fn, "BlahXX1") {
+		t.Fatalf("quarantine filename prefix not as expected; got %s", entries[0].Name())
+	}
+
+	if !strings.HasSuffix(fn, corruptExtension) {
+		t.Fatalf("quarantine filename suffix not as expected; got %s", entries[0].Name())
+	}
+
 }
 
 // TestFileStoreBig creates a fully populated Store and checks things work

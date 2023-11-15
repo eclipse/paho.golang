@@ -93,7 +93,6 @@ func TestLeaveAndError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create queue: %s", err)
 	}
-	q.SetErrorExtension(".corrupt")
 
 	if _, err := q.Peek(); !errors.Is(err, queue.ErrEmpty) {
 		t.Fatalf("expected ErrEmpty, got %s", err)
@@ -114,7 +113,7 @@ func TestLeaveAndError(t *testing.T) {
 	// Move entry to error state
 	if entry, err := q.Peek(); err != nil {
 		t.Fatalf("error peeking test entry: %s", err)
-	} else if err = entry.Error(); err != nil {
+	} else if err = entry.Quarantine(); err != nil {
 		t.Fatalf("error erroring test entry: %s", err)
 	}
 
@@ -134,7 +133,7 @@ func TestLeaveAndError(t *testing.T) {
 		if entry.IsDir() {
 			continue
 		}
-		if strings.HasSuffix(entry.Name(), ".corrupt") {
+		if strings.HasSuffix(entry.Name(), corruptExtension) {
 			found = true
 			break
 		}

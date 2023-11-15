@@ -18,6 +18,7 @@ import (
 const (
 	folderPermissions = os.FileMode(0770)
 	filePermissions   = os.FileMode(0666)
+	corruptExtension  = ".CORRUPT" // quarantined files will be given this extension
 )
 
 var (
@@ -30,7 +31,6 @@ type Queue struct {
 	path            string
 	prefix          string
 	extension       string
-	errExtension    string
 	queueEmpty      bool              // true is the queue is currently empty
 	waiting         []chan<- struct{} // closed when something arrives in the queue
 	waitingForEmpty []chan<- struct{} // closed when queue is empty
@@ -71,10 +71,9 @@ func New(path string, prefix string, extension string) (*Queue, error) {
 	}
 
 	q := &Queue{
-		path:         path,
-		prefix:       prefix,
-		extension:    extension,
-		errExtension: ".corrupt",
+		path:      path,
+		prefix:    prefix,
+		extension: extension,
 	}
 
 	_, err := q.oldestEntry()
@@ -88,16 +87,7 @@ func New(path string, prefix string, extension string) (*Queue, error) {
 
 }
 
-// SetErrorExtension sets the extension to use when an error is flagged with the file
-// The extension defaults to ".corrupt" (which should be fine in most situations)
-// This must not be the same as the extension passed to New.
-func (q *Queue) SetErrorExtension(ext string) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	q.errExtension = ext
-}
-
-// Wait returns a channel that is closed when there is something in the queue
+// Wait returns a channel that will be closed when there is something in the queue
 func (q *Queue) Wait() chan struct{} {
 	c := make(chan struct{})
 	q.mu.Lock()
@@ -161,6 +151,7 @@ func (q *Queue) Peek() (queue.Entry, error) {
 
 // put writes out an item to disk
 func (q *Queue) put(p io.Reader) error {
+	// Use CreateTemp to generate a file with a unique name (it will be removed when packet has been transmitted)
 	f, err := os.CreateTemp(q.path, q.prefix+"*"+q.extension)
 	if err != nil {
 		return err
@@ -189,7 +180,7 @@ func (q *Queue) get() (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	return entry{f: f, errExt: q.errExtension}, nil
+	return entry{f: f}, nil
 }
 
 // oldestEntry returns the filename of the oldest entry in the queue (if any - io.EOF means none)
@@ -232,8 +223,7 @@ func (q *Queue) oldestEntry() (string, error) {
 
 // entry is used to return a queue entry from Peek
 type entry struct {
-	f      *os.File
-	errExt string
+	f *os.File
 }
 
 // Reader provides access to the file contents
@@ -258,12 +248,12 @@ func (e entry) Remove() error {
 	return nil
 }
 
-// Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
-func (e entry) Error() error {
+// Quarantine flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
+func (e entry) Quarantine() error {
 	cErr := e.f.Close() // Want to attempt to move the file regardless of any errors here
 
-	// Attempt to add an extension so the file no longer be found by Peek
-	if err := os.Rename(e.f.Name(), e.f.Name()+e.errExt); err != nil {
+	// Attempt to add an extension so Peek no longer finds the file.
+	if err := os.Rename(e.f.Name(), e.f.Name()+corruptExtension); err != nil {
 		// Attempt to remove the file (important that we don't end up in an infinite loop retrieving the same file!)
 		if rErr := os.Remove(e.f.Name()); rErr != nil {
 			return err // Error from rename is best thing to return

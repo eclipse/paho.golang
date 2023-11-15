@@ -101,9 +101,9 @@ func (q *Queue) Remove() error {
 	return q.remove()
 }
 
-// Error implements Entry.Error - Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
-func (q *Queue) Error() error {
-	return q.remove() // No way for us to flag an error so we just remove the item from the queue
+// Quarantine implements Entry.Quarantine - Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
+func (q *Queue) Quarantine() error {
+	return q.remove() // No way for us to actually quarantine this, so we just remove the item from the queue
 }
 
 // remove removes the first item in the queue.
