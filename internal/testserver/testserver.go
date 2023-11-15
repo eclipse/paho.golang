@@ -148,10 +148,10 @@ func (i *Instance) Connect(ctx context.Context) (net.Conn, chan struct{}, error)
 	}
 	i.connPktDone = false // Connection packet should be the first thing we receive after each connection
 
-	// Note: net.Pipe is synchronous; an async pipe would probably better simulate a real connection
-	// Consider using something like github.com/grpc/grpc-go/test/bufconn/bufconn.go
-	// Output is buffered which means that there is some asynchronicity
-	userCon, ourCon := net.Pipe()
+	userCon, ourCon, err := netPipe(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Ensure both connections support thread safe writes
 	userCon = packets.NewThreadSafeConn(userCon)
@@ -587,4 +587,29 @@ func (m *MIDs) Free(i uint16) {
 // Note: Does not reset lastMid because retaining a sequence can make debugging easier
 func (m *MIDs) Clear() {
 	m.index = make([]bool, int(midMax))
+}
+
+// netPipe simulates a network link using a real connection.
+// This is used over net.Pipe because net.Pipe is synchronous and this can create confusing results
+// because it does not work like a real network connection (a call to `Write` will block until the other
+// end calls `Read` whereas with a real connection there are buffers etc).
+// There are many ways to do this, but using a real connection is simple and effective!
+func netPipe(ctx context.Context) (net.Conn, net.Conn, error) {
+	var lc net.ListenConfig
+	l, err := lc.Listen(ctx, "tcp", "127.0.0.1:0") // Port 0 is wildcard port; OS will choose port for us
+	if err != nil {
+		return nil, nil, err
+	}
+	defer l.Close()
+	var d net.Dialer
+	userCon, err := d.DialContext(ctx, "tcp", l.Addr().String()) // Dial the port we just listened on
+	if err != nil {
+		return nil, nil, err
+	}
+	ourCon, err := l.Accept() // Should return immediately
+	if err != nil {
+		userCon.Close()
+		return nil, nil, err
+	}
+	return userCon, ourCon, nil
 }
