@@ -97,6 +97,7 @@ type ConnectionManager struct {
 	connDown chan struct{} // Channel is closed when the connection is down (only valid if cli != nil; must lock Mu to read)
 	mu       sync.Mutex    // protects all of the above
 
+	cfg       ClientConfig       // The config passed to NewConnection (stored to enable getters)
 	cancelCtx context.CancelFunc // Calling this will shut things down cleanly
 
 	queue   queue.Queue    // In not nil, this will be used to queue publish requests
@@ -241,6 +242,7 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	c := ConnectionManager{
 		cli:       nil,
 		connUp:    make(chan struct{}),
+		cfg:       cfg,
 		cancelCtx: cancel,
 		queue:     cfg.Queue,
 		done:      make(chan struct{}),
@@ -442,6 +444,11 @@ func (c *ConnectionManager) TerminateConnectionForTest() {
 		_ = c.cli.Conn.Close()
 	}
 	c.mu.Unlock()
+}
+
+// Router returns the paho router in use
+func (c *ConnectionManager) Router() paho.Router {
+	return c.cfg.Router
 }
 
 // managePublishQueue sends messages from the publish queue.
