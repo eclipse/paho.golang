@@ -251,7 +251,7 @@ func TestPreloadPublish(t *testing.T) {
 		cap.Properties.ReceiveMaximum = &rm
 	})
 
-	q := memory.New()
+	q := memqueue.New()
 	for i := 0; i < 5; i++ {
 		r, w := io.Pipe()
 
