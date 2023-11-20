@@ -7,7 +7,7 @@ This repository contains the source code for the [Eclipse Paho](http://eclipse.o
 
 Following the release of v0.12, major changes have been introduced to the library ([full QOS1/2 support](https://github.com/eclipse/paho.golang/issues/25)). 
 Due to the extent of these changes, it's likely that some users will encounter breaking changes and bugs may have been introduced (managing the session state is quite complex!). 
-Please assist us in testing @master (and post your expetiences to [this issue](https://github.com/eclipse/paho.golang/issues/207)); the change should enable more people to migrate from the v3 client and gets us a lot closer to V1.0! (see notes at the end of this readme).
+Please assist us in testing @master (and post your experiences to [this issue](https://github.com/eclipse/paho.golang/issues/207)); the change should enable more people to migrate from the v3 client and gets us a lot closer to V1.0! (see notes at the end of this readme).
 
 There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project, and its API is very different to this one).
 
