@@ -79,7 +79,7 @@ type ClientConfig struct {
 	WillMessage    *paho.WillMessage
 	WillProperties *paho.WillProperties
 
-	ConnectPacketBuilder func(*paho.Connect) *paho.Connect // called prior to connection allowing customisation of the CONNECT packet
+	ConnectPacketBuilder func(*paho.Connect, *url.URL) *paho.Connect // called prior to connection allowing customisation of the CONNECT packet
 
 	// DisconnectPacketBuilder - called prior to disconnection allowing customisation of the DISCONNECT
 	// packet. If the function returns nil, then no DISCONNECT packet will be passed; if nil a default packet is sent.
@@ -158,7 +158,9 @@ func (cfg *ClientConfig) SetWillMessage(topic string, payload []byte, qos byte, 
 // Deprecated: Set ConnectPacketBuilder directly instead. This function exists for
 // backwards compatibility only (and may be removed in the future).
 func (cfg *ClientConfig) SetConnectPacketConfigurator(fn func(*paho.Connect) *paho.Connect) bool {
-	cfg.ConnectPacketBuilder = fn
+	cfg.ConnectPacketBuilder = func(pc *paho.Connect, u *url.URL) *paho.Connect {
+		return fn(pc)
+	}
 	return fn != nil
 }
 
@@ -174,7 +176,7 @@ func (cfg *ClientConfig) SetDisConnectPacketConfigurator(fn func() *paho.Disconn
 
 // buildConnectPacket constructs a Connect packet for the paho client, based on staged configuration.
 // If the program uses SetConnectPacketConfigurator, the provided callback will be executed with the preliminary Connect packet representation.
-func (cfg *ClientConfig) buildConnectPacket(firstConnection bool) *paho.Connect {
+func (cfg *ClientConfig) buildConnectPacket(firstConnection bool, serverURL *url.URL) *paho.Connect {
 
 	cp := &paho.Connect{
 		KeepAlive:  cfg.KeepAlive,
@@ -206,7 +208,7 @@ func (cfg *ClientConfig) buildConnectPacket(firstConnection bool) *paho.Connect 
 	}
 
 	if cfg.ConnectPacketBuilder != nil {
-		cp = cfg.ConnectPacketBuilder(cp)
+		cp = cfg.ConnectPacketBuilder(cp, serverURL)
 	}
 
 	return cp
