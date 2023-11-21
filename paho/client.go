@@ -27,8 +27,11 @@ const defaultSendAckInterval = 50 * time.Millisecond
 
 var (
 	ErrManualAcknowledgmentDisabled = errors.New("manual acknowledgments disabled")
-	ErrNetworkErrorAfterStored      = errors.New("error after packet added to state")         // Could not send packet but its stored (and response will be sent on chan at some point in the future)
-	ErrConnectionLost               = errors.New("connection lost after request transmitted") // We don't know whether the server received the request or not
+	ErrNetworkErrorAfterStored      = errors.New("error after packet added to state")                                  // Could not send packet but its stored (and response will be sent on chan at some point in the future)
+	ErrConnectionLost               = errors.New("connection lost after request transmitted")                          // We don't know whether the server received the request or not
+	ErrReconnectNoHandler           = errors.New("no auto reconnect handler provided")                                 // We enabled AutoReconnect but no handler was provided
+	ErrReconnectMissingConfig       = errors.New("missing reconnect config")                                           // Called reconnect() but no config and handler were provided
+	ErrReconnectMissingNetConn      = errors.New("net.Conn is missing and required to re-establish connectionto mqtt") // Called reconnect() but no net.Conn was provided
 )
 
 type (
@@ -71,6 +74,8 @@ type (
 		// SendAcksInterval is used only when EnableManualAcknowledgment is true
 		// it determines how often the client tries to send a batch of acknowledgments in the right order to the server.
 		SendAcksInterval time.Duration
+		// AutoReconnect is used to enable auto reconnect functionality
+		AutoReconnectConfig *ReconnectConfig
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
@@ -101,6 +106,22 @@ type (
 		WildcardSubAvailable bool
 		SubIDAvailable       bool
 		SharedSubAvailable   bool
+	}
+
+	// ReconnectConfig is a struct of the options for the auto reconnect
+	ReconnectConfig struct {
+		MaxRetries       int                                // Maximum number of retries, -1 for infinite, 0 to disable, recommended 5
+		RetryInterval    time.Duration                      // Initial retry interval, recommended 1s
+		MaxRetryInterval time.Duration                      // Maximum retry interval, recommended 60s
+		BackoffFactor    float64                            // Factor to increase the interval each retry, recommended 2
+		ReconnectHandler func() (net.Conn, *Connect, error) // Required to establish the connection, must return a net.Conn and a Connect packet
+		subscriptions    []subscribeOrUnsubscribed          // Subscriptions to be re-subscribed after reconnect
+	}
+
+	// subscribeOrUnsubscribed is a struct of the subscriptions to be re-subscribed after reconnect
+	subscribeOrUnsubscribed struct {
+		Subscribed   *Subscribe
+		Unsubscribed *Unsubscribe
 	}
 )
 
@@ -474,12 +495,12 @@ func (c *Client) incoming() {
 
 func (c *Client) close() {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 
 	select {
 	case <-c.stop:
 		// already shutting down, return when shutdown complete
 		<-c.done
+		c.mu.Unlock() // can't defer since reconnect requires close to finish
 		return
 	default:
 	}
@@ -503,6 +524,16 @@ func (c *Client) close() {
 	c.workers.Wait()
 	c.debug.Println("workers done")
 	close(c.done)
+	c.mu.Unlock() // can't defer since reconnect requires close to finish
+
+	// if reconnect is enabled, start the reconnect process
+	if c.AutoReconnectConfig != nil {
+		c.debug.Println("starting reconnect in close")
+		err := c.reconnect()
+		if err != nil {
+			c.errors.Println("error reconnecting", err)
+		}
+	}
 }
 
 // error is called to signify that an error situation has occurred, this
@@ -649,6 +680,11 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		}
 	}
 
+	// if reconnect is enabled, add the subscription to the list of subscriptions to be re-subscribed after reconnect
+	if c.AutoReconnectConfig != nil {
+		c.AutoReconnectConfig.subscriptions = append(c.AutoReconnectConfig.subscriptions, subscribeOrUnsubscribed{Subscribed: s})
+	}
+
 	return sa, nil
 }
 
@@ -713,6 +749,11 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 		}
 	}
 
+	// if reconnect is enabled, add the unsubscription to the list of unsubscriptions to be re-unsubscribe after reconnect
+	if c.AutoReconnectConfig != nil {
+		c.AutoReconnectConfig.subscriptions = append(c.AutoReconnectConfig.subscriptions, subscribeOrUnsubscribed{Unsubscribed: u})
+	}
+
 	return ua, nil
 }
 
@@ -773,6 +814,10 @@ func (c *Client) PublishWithOptions(ctx context.Context, p *Publish, o PublishOp
 	case 0:
 		c.debug.Println("sending QoS0 message")
 		if _, err := pb.WriteTo(c.Conn); err != nil {
+			if c.AutoReconnectConfig != nil {
+				return nil, c.reconnect()
+			}
+
 			go c.error(err)
 			return nil, err
 		}
@@ -798,6 +843,10 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish, o Publis
 	// writing the packet to the connection
 	if _, err := pb.WriteTo(c.Conn); err != nil {
 		c.debug.Printf("failed to write packet %d to connection: %s", pb.PacketID, err)
+		if c.AutoReconnectConfig != nil {
+			return nil, c.reconnect()
+		}
+
 		if o.Method == PublishMethod_AsyncSend {
 			return nil, ErrNetworkErrorAfterStored // Async send, so we don't wait for the response (may add callbacks in the future to enable user to obtain status)
 		}
@@ -913,4 +962,107 @@ func (c *Client) SetErrorLogger(l log.Logger) {
 	if c.autoCloseSession { // If we created the session store then it should use the same logger
 		c.Session.SetErrorLogger(l)
 	}
+}
+
+// reconnect attempts to re-establish a connection using the configured
+// AutoReconnectConfig settings. It follows these steps:
+//  1. Checks if AutoReconnectConfig is defined, returns an error if not.
+//  2. Checks if the ReconnectHandler within AutoReconnectConfig is set, returns an error if missing.
+//  3. Retrieves the configuration from AutoReconnectConfig.
+//  4. If MaxRetries is 0, it logs that reconnect is disabled and does not attempt any retries.
+//  5. Initializes a loop to attempt reconnection. This loop runs either indefinitely (if MaxRetries is negative)
+//     or until the maximum number of retries is reached.
+//  6. Inside the loop, it calls the ReconnectHandler to get a new connection and connection configuration.
+//     Returns an error if the ReconnectHandler does not provide a valid connection.
+//  7. Attempts to connect using the newly provided connection and configuration.
+//  8. If the connection is successful, logs the success and exits the loop.
+//  9. If the connection fails, logs the failure and performs exponential backoff before the next attempt.
+//     The backoff time is increased on each attempt, based on the BackoffFactor, but capped at MaxRetryInterval.
+//  10. Keeps track of all errors encountered during each retry attempt (unless infinite retries are set to avoid memory leak).
+//  11. After exhausting all retries, returns a joined error message containing all errors encountered during reconnection attempts.
+func (c *Client) reconnect() error {
+	c.debug.Println("reconnecting")
+
+	// Check if reconnect is enabled
+	if c.AutoReconnectConfig == nil {
+		return ErrReconnectMissingConfig
+	}
+
+	// Check if reconnect handler is set
+	if c.AutoReconnectConfig.ReconnectHandler == nil {
+		return ErrReconnectNoHandler
+	}
+
+	config := c.AutoReconnectConfig
+	if config.MaxRetries == 0 { // Reconnect disabled
+		c.debug.Println("reconnect disabled, no attempts made")
+		return nil // No retries
+	}
+
+	var errs []error
+	attempt := 0
+	currentInterval := config.RetryInterval
+
+	// MaxRetries < 0 means infinite retries
+	infinite := config.MaxRetries < 0
+
+	// Loop until we've reached the maximum number of retries or we've successfully reconnected
+	for infinite || attempt < config.MaxRetries {
+		c.debug.Println(fmt.Sprintf("attempting reconnect, attempts=%d", attempt+1))
+		conn, connectConfig, err := config.ReconnectHandler()
+
+		// In order to attempt a mqtt reconnection, there needs to be a net.Conn
+		// and err needs to be nil
+		if conn != nil && err == nil {
+			c.Conn = conn
+			_, err = c.Connect(context.Background(), connectConfig)
+			if err == nil {
+				c.debug.Println("reconnect successful")
+
+				// re-subscribe to topics
+				subs := config.subscriptions
+				if len(subs) > 0 {
+					c.debug.Println("re-subscribing to topics")
+					for _, sub := range subs {
+						if sub.Subscribed != nil {
+							_, err = c.Subscribe(context.Background(), sub.Subscribed)
+						} else if sub.Unsubscribed != nil {
+							_, err = c.Unsubscribe(context.Background(), sub.Unsubscribed)
+						}
+						if err != nil {
+							c.errors.Println("error re-subscribing to topics:", err)
+						}
+					}
+				}
+
+				return nil // Successful connection
+			}
+
+		}
+
+		// If net.Conn is null, but no error was thrown by the user
+		// we will default to a missing net Conn error
+		if conn == nil && err == nil {
+			err = ErrReconnectMissingNetConn
+		}
+
+		// Failed to connect, try again
+		c.errors.Println("reconnect failed:", err)
+
+		// keep track of the errors, unless we're doing infinite retries to avoid memory leak
+		if !infinite {
+			errs = append(errs, err)
+		}
+
+		// Exponential backoff
+		time.Sleep(currentInterval)
+		currentInterval *= time.Duration(config.BackoffFactor)
+		if currentInterval > config.MaxRetryInterval {
+			currentInterval = config.MaxRetryInterval
+		}
+
+		attempt++
+	}
+
+	return errors.Join(errs...) // Return the errors after all retries have failed
 }

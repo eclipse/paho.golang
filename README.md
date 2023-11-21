@@ -179,3 +179,93 @@ exceed receive maximum). This is fixable, but requires some thought and a review
 
 Calling `Client.Ack()` after the connection is closed may have unpredictable results (particularly if the sessionState
 is being accessed by a new connection). See issue #160.
+
+---
+## AutoReconnect Feature
+The AutoReconnectConfig is a new feature introduced to enhance the resilience and stability of MQTT connections. It allows your application to automatically attempt to reconnect to the MQTT broker in the event of a connection loss. This feature is especially useful in environments where network instability or intermittent disconnections are common.
+
+### Configuration
+To use the AutoReconnectConfig, include it in your paho.ClientConfig during client initialization. The key parameters of AutoReconnectConfig include:
+
+* `MaxRetries`: The maximum number of reconnection attempts. Set this to -1 for infinite retries.
+* `RetryInterval`: The initial delay before the first retry attempt, which increases exponentially on subsequent retries.
+* `MaxRetryInterval`: The maximum interval between retry attempts, to prevent excessively long wait times.
+* `BackoffFactor`: The factor by which the retry interval increases after each failed attempt.
+* `ReconnectHandler`: A function that provides a new connection and connection configuration. This handler is invoked for each reconnection attempt.
+
+### Example Usage
+In the provided example, the `AutoReconnectConfig` is configured for an MQTT client. The client attempts to connect to an MQTT broker using TCP with a specified broker address, username, and password. The ReconnectHandler is set up to create a new connection and configure it with the necessary credentials each time a reconnection is attempted.
+
+The client subscribes to a specific MQTT topic, and incoming messages are handled by the registered router handler. The AutoReconnectConfig ensures that the client remains connected or automatically attempts to reconnect in case the connection is lost.
+
+### Handling Connection Loss
+With `AutoReconnectConfig`, the client will automatically handle connection losses. If the connection to the MQTT broker is disrupted, the client will initiate reconnection attempts based on the configured parameters. This process is transparent to the application, reducing the need for manual intervention and improving the overall reliability of your MQTT communication.
+```go
+mqtt_url := "localhost"
+mqtt_username := "username"
+mqtt_password := "password"
+topic := "test/topic"
+
+broker := fmt.Sprintf("%s:%d", mqtt_url, 1883)
+conn, err := net.Dial("tcp", broker)
+if err != nil {
+  return err
+}
+clientid := "example_" + ksuid.New().String()
+
+config := paho.ClientConfig{
+  Conn: conn,
+  AutoReconnectConfig: &paho.ReconnectConfig{
+    MaxRetries:       -1,
+    RetryInterval:    1 * time.Second,
+    MaxRetryInterval: 60 * time.Second,
+    BackoffFactor:    2,
+    ReconnectHandler: func() (net.Conn, *paho.Connect, error) {
+      conn, err := net.Dial("tcp", broker)
+      if err != nil {
+        return nil, nil, err
+      }
+
+      return conn, &paho.Connect{
+        KeepAlive:    30,
+        Username:     mqtt_username,
+        Password:     []byte(mqtt_password),
+        UsernameFlag: true,
+        PasswordFlag: true,
+        ClientID:     clientid,
+      }, nil
+    },
+  },
+  Router: paho.NewStandardRouter(),
+}
+
+config.Router.RegisterHandler(topic, func(msg *paho.Publish) {
+  // handle incoming message
+})
+
+c := paho.NewClient(config)
+ca, err := c.Connect(context.Background(), &paho.Connect{
+  KeepAlive:    30,
+  Username:     mqtt_username,
+  Password:     []byte(mqtt_password),
+  UsernameFlag: true,
+  PasswordFlag: true,
+  ClientID:     clientid,
+})
+if err != nil {
+  return err
+}
+if ca.ReasonCode != 0 {
+  return fmt.Errorf("failed to connect to %s : %v - %s", broker, ca.ReasonCode, ca.Properties.ReasonString)
+}
+
+_, err = c.Subscribe(context.Background(), &paho.Subscribe{
+  Subscriptions: []paho.SubscribeOptions{{
+    Topic: topic,
+    QoS:   0,
+  }},
+})
+if err != nil {
+  return err
+}
+```
