@@ -50,41 +50,46 @@ func listener(server, rTopic, username, password string) {
 
 		c := paho.NewClient(paho.ClientConfig{
 			Conn: conn,
-		})
-		c.Router = paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
-			if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
-				log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+				func(pr paho.PublishReceived) (bool, error) {
+					m := pr.Packet
+					if m.Properties != nil && m.Properties.CorrelationData != nil && m.Properties.ResponseTopic != "" {
+						log.Printf("Received message with response topic %s and correl id %s\n%s", m.Properties.ResponseTopic, string(m.Properties.CorrelationData), string(m.Payload))
 
-				var r Request
-				var resp Response
+						var r Request
+						var resp Response
 
-				if err := json.NewDecoder(bytes.NewReader(m.Payload)).Decode(&r); err != nil {
-					log.Printf("Failed to decode Request: %v", err)
-				}
+						if err := json.NewDecoder(bytes.NewReader(m.Payload)).Decode(&r); err != nil {
+							log.Printf("Failed to decode Request: %v", err)
+						}
 
-				switch r.Function {
-				case "add":
-					resp.Value = r.Param1 + r.Param2
-				case "mul":
-					resp.Value = r.Param1 * r.Param2
-				case "div":
-					resp.Value = r.Param1 / r.Param2
-				case "sub":
-					resp.Value = r.Param1 - r.Param2
-				}
+						switch r.Function {
+						case "add":
+							resp.Value = r.Param1 + r.Param2
+						case "mul":
+							resp.Value = r.Param1 * r.Param2
+						case "div":
+							resp.Value = r.Param1 / r.Param2
+						case "sub":
+							resp.Value = r.Param1 - r.Param2
+						}
 
-				body, _ := json.Marshal(resp)
-				_, err := c.Publish(context.Background(), &paho.Publish{
-					Properties: &paho.PublishProperties{
-						CorrelationData: m.Properties.CorrelationData,
-					},
-					Topic:   m.Properties.ResponseTopic,
-					Payload: body,
-				})
-				if err != nil {
-					log.Fatalf("failed to publish message: %s", err)
-				}
-			}
+						body, _ := json.Marshal(resp)
+						_, err := pr.Client.Publish(context.Background(), &paho.Publish{
+							Properties: &paho.PublishProperties{
+								CorrelationData: m.Properties.CorrelationData,
+							},
+							Topic:   m.Properties.ResponseTopic,
+							Payload: body,
+						})
+						if err != nil {
+							log.Fatalf("failed to publish message: %s", err)
+						}
+						return true, nil
+					}
+					return false, nil
+				},
+			},
 		})
 
 		cp := &paho.Connect{

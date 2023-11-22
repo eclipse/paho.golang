@@ -542,13 +542,16 @@ func TestManualAcksInOrder(t *testing.T) {
 
 	wg.Add(expectedPacketsCount)
 	c := NewClient(ClientConfig{
-		Conn:                       ts.ClientConn(),
+		Conn: ts.ClientConn(),
+		OnPublishReceived: []func(PublishReceived) (bool, error){
+			func(pr PublishReceived) (bool, error) {
+				defer wg.Done()
+				actualPublishPackets = append(actualPublishPackets, *pr.Packet.Packet())
+				require.NoError(t, pr.Client.Ack(pr.Packet))
+				return true, nil
+			},
+		},
 		EnableManualAcknowledgment: true,
-	})
-	c.Router = NewStandardRouterWithDefault(func(p *Publish) {
-		defer wg.Done()
-		actualPublishPackets = append(actualPublishPackets, *p.Packet())
-		require.NoError(t, c.Ack(p))
 	})
 	require.NotNil(t, c)
 	defer c.close()
@@ -1010,3 +1013,69 @@ func (f *fakeAuth) Authenticate(a *Auth) *Auth {
 }
 
 func (f *fakeAuth) Authenticated() {}
+
+// TestAddOnPublishReceived checks we can add and remove onPublishReceived callbacks
+func TestAddOnPublishReceived(t *testing.T) {
+	callAll := func(c *Client) {
+		for _, f := range c.onPublishReceived {
+			f(PublishReceived{Packet: &Publish{Properties: &PublishProperties{}}})
+		}
+	}
+
+	c := NewClient(ClientConfig{})
+	require.Lenf(t, c.onPublishReceived, 1, "onPublishReceived must contain one record (as c.Router is nil)")
+	require.Lenf(t, c.onPublishReceivedTracker, 1, "onPublishReceived must contain one record")
+	testOne := 0
+	removeOne := c.AddOnPublishReceived(func(_ PublishReceived) (bool, error) { testOne++; return false, nil })
+	require.Lenf(t, c.onPublishReceived, 2, "onPublishReceived should have one item")
+	require.Lenf(t, c.onPublishReceivedTracker, 2, "onPublishReceived should have one item")
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+	removeOne()
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+
+	testTwo := 0
+	testThree := 0
+	removeTwo := c.AddOnPublishReceived(func(_ PublishReceived) (bool, error) { testTwo++; return false, nil })
+	removeThree := c.AddOnPublishReceived(func(_ PublishReceived) (bool, error) { testThree++; return false, nil })
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+	require.Equal(t, 1, testTwo, "Expected 1")
+	require.Equal(t, 1, testThree, "Expected 1")
+	removeTwo()
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+	require.Equal(t, 1, testTwo, "Expected 1")
+	require.Equal(t, 2, testThree, "Expected 2")
+	removeThree()
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+	require.Equal(t, 1, testTwo, "Expected 1")
+	require.Equal(t, 2, testThree, "Expected 2")
+
+	// Test with a pre-populated onPublishReceived
+	testOne = 0
+	testTwo = 0
+	testThree = 0
+	c = NewClient(ClientConfig{
+		OnPublishReceived: []func(PublishReceived) (bool, error){
+			func(_ PublishReceived) (bool, error) { testOne++; return false, nil },
+			func(_ PublishReceived) (bool, error) { testTwo++; return false, nil },
+		},
+	})
+	callAll(c)
+	require.Equal(t, 1, testOne, "Expected 1")
+	require.Equal(t, 1, testTwo, "Expected 1")
+	require.Equal(t, 0, testThree, "Expected 0")
+	removeThree = c.AddOnPublishReceived(func(_ PublishReceived) (bool, error) { testThree++; return false, nil })
+	callAll(c)
+	require.Equal(t, 2, testOne, "Expected 2")
+	require.Equal(t, 2, testTwo, "Expected 2")
+	require.Equal(t, 1, testThree, "Expected 1")
+	removeThree()
+	callAll(c)
+	require.Equal(t, 3, testOne, "Expected 3")
+	require.Equal(t, 3, testTwo, "Expected 3")
+	require.Equal(t, 1, testThree, "Expected 1")
+}
