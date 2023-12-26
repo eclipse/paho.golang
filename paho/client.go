@@ -32,7 +32,15 @@ var (
 )
 
 type (
-	// ClientConfig are the user configurable options for the client, an
+	PublishReceived struct {
+		Packet *Publish
+		Client *Client // The Client that received the message (note that the connection may have been lost post-receipt)
+
+		AlreadyHandled bool    // Set to true if a previous callback has returned true (indicating some action has already been taken re the message)
+		Errs           []error // Errors returned by previous handlers (if any).
+	}
+
+	// ClientConfig are the user-configurable options for the client, an
 	// instance of this struct is passed into NewClient(), not all options
 	// are required to be set, defaults are provided for Persistence, MIDs,
 	// PingHandler, PacketTimeout and Router.
@@ -47,9 +55,21 @@ type (
 		Session          session.SessionManager
 		autoCloseSession bool
 
-		AuthHandler   Auther
-		PingHandler   Pinger
-		Router        Router
+		AuthHandler Auther
+		PingHandler Pinger
+
+		// Router - new inbound messages will be passed to the `Route(*packets.Publish)` function.
+		//
+		// Depreciated: If a router is provided, it will now be added to the end of the OnPublishReceived
+		// slice (which provides a more flexible approach to handling incoming messages).
+		Router Router
+
+		// OnPublishReceived provides a slice of callbacks; additional handlers may be added after the client has been
+		// created via the AddOnPublishReceived function (Client holds a copy of the slice; OnPublishReceived will not change).
+		// When a `PUBLISH` is received, the callbacks will be called in order. If a callback processes the message,
+		// then it should return true. This boolean, and any errors, will be passed to subsequent handlers.
+		OnPublishReceived []func(PublishReceived) (bool, error)
+
 		PacketTimeout time.Duration
 		// OnServerDisconnect is called only when a packets.DISCONNECT is received from server
 		OnServerDisconnect func(*Disconnect)
@@ -76,6 +96,12 @@ type (
 	Client struct {
 		mu sync.Mutex
 		ClientConfig
+
+		// OnPublishReceived copy of OnPublishReceived from ClientConfig (perhaps with added callback form Router)
+		onPublishReceived        []func(PublishReceived) (bool, error)
+		onPublishReceivedTracker []int // Used to track positions in above
+		onPublishReceivedMu      sync.Mutex
+
 		// authResponse is used for handling the MQTTv5 authentication exchange.
 		authResponse   chan<- packets.ControlPacket
 		stop           chan struct{}
@@ -129,10 +155,11 @@ func NewClient(conf ClientConfig) *Client {
 			MaximumPacketSize: 0,
 			TopicAliasMaximum: 0,
 		},
-		ClientConfig: conf,
-		done:         make(chan struct{}),
-		errors:       log.NOOPLogger{},
-		debug:        log.NOOPLogger{},
+		ClientConfig:      conf,
+		onPublishReceived: conf.OnPublishReceived,
+		done:              make(chan struct{}),
+		errors:            log.NOOPLogger{},
+		debug:             log.NOOPLogger{},
 	}
 
 	if c.Session == nil {
@@ -142,9 +169,20 @@ func NewClient(conf ClientConfig) *Client {
 	if c.PacketTimeout == 0 {
 		c.PacketTimeout = 10 * time.Second
 	}
-	if c.Router == nil {
-		c.Router = NewStandardRouter()
+
+	if c.Router == nil && len(c.onPublishReceived) == 0 {
+		c.Router = NewStandardRouter() // Maintain backwards compatibility (for now!)
 	}
+	if c.Router != nil {
+		r := c.Router
+		c.onPublishReceived = append(c.onPublishReceived,
+			func(p PublishReceived) (bool, error) {
+				r.Route(p.Packet.Packet())
+				return false, nil
+			})
+	}
+	c.onPublishReceivedTracker = make([]int, len(c.onPublishReceived)) // Must have the same number of elements as onPublishReceived
+
 	if c.PingHandler == nil {
 		c.PingHandler = DefaultPingerWithCustomFailHandler(func(e error) {
 			go c.error(e)
@@ -373,17 +411,37 @@ func (c *Client) ack(pb *packets.Publish) {
 
 func (c *Client) routePublishPackets() {
 	for pb := range c.publishPackets {
-		if !c.ClientConfig.EnableManualAcknowledgment {
-			c.Router.Route(pb)
-			c.ack(pb)
-			continue
+		// Copy onPublishReceived so lock is only held briefly
+		c.onPublishReceivedMu.Lock()
+		handlers := make([]func(PublishReceived) (bool, error), len(c.onPublishReceived))
+		for i := range c.onPublishReceived {
+			handlers[i] = c.onPublishReceived[i]
 		}
+		c.onPublishReceivedMu.Unlock()
 
-		if pb.QoS != 0 {
+		if c.ClientConfig.EnableManualAcknowledgment && pb.QoS != 0 {
 			c.acksTracker.add(pb)
 		}
 
-		c.Router.Route(pb)
+		var handled bool
+		var errs []error
+		pkt := PublishFromPacketPublish(pb)
+		for _, h := range handlers {
+			ha, err := h(PublishReceived{
+				Packet:         pkt,
+				Client:         c,
+				AlreadyHandled: handled,
+				Errs:           errs,
+			})
+			if ha {
+				handled = true
+			}
+			errs = append(errs, err)
+		}
+
+		if !c.ClientConfig.EnableManualAcknowledgment {
+			c.ack(pb)
+		}
 	}
 }
 
@@ -895,6 +953,42 @@ func (c *Client) Disconnect(d *Disconnect) error {
 	c.close()
 
 	return err
+}
+
+// AddOnPublishReceived adds a function that will be called when a PUBLISH is received
+// The new function will be called after any functions already in the list
+// Returns a function that can be called to remove the callback
+func (c *Client) AddOnPublishReceived(f func(PublishReceived) (bool, error)) func() {
+	c.onPublishReceivedMu.Lock()
+	defer c.onPublishReceivedMu.Unlock()
+
+	c.onPublishReceived = append(c.onPublishReceived, f)
+
+	// We insert a unique ID into the same position in onPublishReceivedTracker; this enables us to
+	// remove the handler later (without complicating onPublishReceived which will be called frequently)
+	var id int
+idLoop:
+	for id = 0; ; id++ {
+		for _, used := range c.onPublishReceivedTracker {
+			if used == id {
+				continue idLoop
+			}
+		}
+		break
+	}
+	c.onPublishReceivedTracker = append(c.onPublishReceivedTracker, id)
+
+	return func() {
+		c.onPublishReceivedMu.Lock()
+		defer c.onPublishReceivedMu.Unlock()
+		for pos, storedID := range c.onPublishReceivedTracker {
+			if id == storedID {
+				c.onPublishReceivedTracker = append(c.onPublishReceivedTracker[:pos], c.onPublishReceivedTracker[pos+1:]...)
+				c.onPublishReceived = append(c.onPublishReceived[:pos], c.onPublishReceived[pos+1:]...)
+			}
+		}
+
+	}
 }
 
 // SetDebugLogger takes an instance of the paho Logger interface
