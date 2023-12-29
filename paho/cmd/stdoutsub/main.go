@@ -32,9 +32,11 @@ func main() {
 	}
 
 	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
-			msgChan <- m
-		}),
+		OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+			func(pr paho.PublishReceived) (bool, error) {
+				msgChan <- pr.Packet
+				return true, nil
+			}},
 		Conn: conn,
 	})
 	c.SetDebugLogger(logger)

@@ -92,7 +92,10 @@ func TestDisconnectAfterOutgoingPublish(t *testing.T) {
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
 			Session:  session,
-			Router:   paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {}),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+				func(pr paho.PublishReceived) (bool, error) {
+					return true, nil
+				}},
 		},
 	}
 
@@ -255,7 +258,10 @@ func TestQueueResume(t *testing.T) {
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
 			Session:  session,
-			Router:   paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {}),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+				func(pr paho.PublishReceived) (bool, error) {
+					return true, nil
+				}},
 		},
 	}
 

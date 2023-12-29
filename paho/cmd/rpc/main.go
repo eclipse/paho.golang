@@ -156,8 +156,11 @@ func main() {
 	defer cancel()
 
 	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewStandardRouterWithDefault(nil),
-		Conn:   conn,
+		OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+			func(pr paho.PublishReceived) (bool, error) {
+				return true, nil
+			}},
+		Conn: conn,
 	})
 
 	cp := &paho.Connect{

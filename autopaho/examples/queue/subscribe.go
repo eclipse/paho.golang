@@ -52,49 +52,51 @@ func subscribe(ctx context.Context, serverURL *url.URL, msgCount uint64, ready c
 		// eclipse/paho.golang/paho provides base mqtt functionality, the below config will be passed in for each connection
 		ClientConfig: paho.ClientConfig{
 			ClientID: "TestSub",
-			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
-				msgNo, err := binary.ReadUvarint(bytes.NewReader(m.Payload))
-				if err != nil {
-					panic(err) // Message corruption or something else is using our topic!
-				}
-				// pubQos := msgNo%2 + 1
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+				func(pr paho.PublishReceived) (bool, error) {
+					msgNo, err := binary.ReadUvarint(bytes.NewReader(pr.Packet.Payload))
+					if err != nil {
+						panic(err) // Message corruption or something else is using our topic!
+					}
+					// pubQos := msgNo%2 + 1
 
-				newMessage := false
+					newMessage := false
 
-				if QOS == 1 {
-					// Messages may be received out of order as pub/sub at QOS1 meaning we may receive multiple copies
-					if !msgReceived[msgNo] {
+					if QOS == 1 {
+						// Messages may be received out of order as pub/sub at QOS1 meaning we may receive multiple copies
+						if !msgReceived[msgNo] {
+							newMessage = true
+						}
+					} else {
+						// Messages should always be in order and received once
+						if msgReceived[msgNo] {
+							panic(fmt.Sprintf("subscribe: message # %d already received", msgNo))
+						}
 						newMessage = true
 					}
-				} else {
-					// Messages should always be in order and received once
-					if msgReceived[msgNo] {
-						panic(fmt.Sprintf("subscribe: message # %d already received", msgNo))
-					}
-					newMessage = true
-				}
-				if newMessage {
-					msgReceived[msgNo] = true
-					msgRcvCount++
+					if newMessage {
+						msgReceived[msgNo] = true
+						msgRcvCount++
 
-					// We test that messages are received in the expected order (ordered delivery per topic is
-					// required by the MQTT v5 spec)
-					if msgNo > 1 && !msgReceived[msgNo-1] {
-						panic(fmt.Sprintf("subscribe: message # %d received but we don't have previous QOS2 msg", msgNo))
-					}
-					if msgReceived[msgNo+1] {
-						panic(fmt.Sprintf("subscribe: message # %d received but we have already received next QOS2 msg ", msgNo))
-					}
+						// We test that messages are received in the expected order (ordered delivery per topic is
+						// required by the MQTT v5 spec)
+						if msgNo > 1 && !msgReceived[msgNo-1] {
+							panic(fmt.Sprintf("subscribe: message # %d received but we don't have previous QOS2 msg", msgNo))
+						}
+						if msgReceived[msgNo+1] {
+							panic(fmt.Sprintf("subscribe: message # %d received but we have already received next QOS2 msg ", msgNo))
+						}
 
-					ping <- msgRcvCount
-					if msgRcvCount%NotifyEvery == 0 {
-						fmt.Printf("subscribe: received %d messages\n", msgRcvCount)
+						ping <- msgRcvCount
+						if msgRcvCount%NotifyEvery == 0 {
+							fmt.Printf("subscribe: received %d messages\n", msgRcvCount)
+						}
+						if msgRcvCount == msgCount {
+							close(allReceived)
+						}
 					}
-					if msgRcvCount == msgCount {
-						close(allReceived)
-					}
-				}
-			}),
+					return true, nil
+				}},
 			OnClientError: func(err error) { fmt.Printf("subscribe: client error: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {

@@ -41,6 +41,11 @@ type WebSocketConfig struct {
 	Header func(url *url.URL, tlsCfg *tls.Config) http.Header       // If non-nil this will be called before each connection attempt to get headers to include with request
 }
 
+type PublishReceived struct {
+	paho.PublishReceived
+	ConnectionManager *ConnectionManager
+}
+
 // ClientConfig adds a few values, required to manage the connection, to the standard paho.ClientConfig (note that
 // conn will be ignored)
 type ClientConfig struct {
@@ -448,9 +453,37 @@ func (c *ConnectionManager) TerminateConnectionForTest() {
 	c.mu.Unlock()
 }
 
-// Router returns the paho router in use
-func (c *ConnectionManager) Router() paho.Router {
-	return c.cfg.Router
+// AddOnPublishReceived adds a function that will be called when a PUBLISH is received
+// The new function will be called after any functions already in the list
+// Returns a function that can be called to remove the callback
+func (c *ConnectionManager) AddOnPublishReceived(f func(PublishReceived) (bool, error)) func() {
+	// Removing a handler is a bit tricky because the connection may have dropped and been reestablished
+	// The current approach is to leave the handler in place but turn it into a no-op (this could be improved!)
+	isActive := true
+	fn := func(pr paho.PublishReceived) (bool, error) {
+		if !isActive {
+			return false, nil
+		}
+		return f(PublishReceived{
+			PublishReceived:   pr,
+			ConnectionManager: c,
+		})
+	}
+	var removeFromClient func()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.cli != nil {
+		removeFromClient = c.cli.AddOnPublishReceived(fn)
+	}
+
+	return func() {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		if removeFromClient != nil {
+			removeFromClient()
+		}
+		isActive = false
+	}
 }
 
 // managePublishQueue sends messages from the publish queue.

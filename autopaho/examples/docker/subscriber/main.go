@@ -64,9 +64,11 @@ func main() {
 		ClientConfig: paho.ClientConfig{
 			ClientID: cfg.clientID,
 			Session:  sessionState,
-			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
-				h.handle(m)
-			}),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+				func(pr paho.PublishReceived) (bool, error) {
+					h.handle(pr.Packet)
+					return true, nil
+				}},
 			OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
