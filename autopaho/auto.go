@@ -368,6 +368,22 @@ func (c *ConnectionManager) AwaitConnection(ctx context.Context) error {
 	}
 }
 
+// Authenticate is used to initiate a reauthentication of credentials with the
+// server. This function sends the initial Auth packet to start the reauthentication
+// then relies on the client AuthHandler managing any further requests from the
+// server until either a successful Auth packet is passed back, or a Disconnect
+// is received.
+func (c *ConnectionManager) Authenticate(ctx context.Context, a *paho.Auth) (*paho.AuthResponse, error) {
+	c.mu.Lock()
+	cli := c.cli
+	c.mu.Unlock()
+
+	if cli == nil {
+		return nil, ConnectionDownError
+	}
+	return cli.Authenticate(ctx, a)
+}
+
 // Subscribe is used to send a Subscription request to the MQTT server.
 // It is passed a pre-prepared Subscribe packet and blocks waiting for
 // a response Suback, or for the timeout to fire. Any response Suback
