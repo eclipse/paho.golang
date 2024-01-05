@@ -23,7 +23,14 @@ func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	c.Router.RegisterHandler(fmt.Sprintf("%s/responses", c.ClientID), h.responseHandler)
+	responseTopic := fmt.Sprintf("%s/responses", c.ClientID)
+	c.AddOnPublishReceived(func(pr paho.PublishReceived) (bool, error) {
+		if pr.Packet.Topic == responseTopic {
+			h.responseHandler(pr.Packet)
+			return true, nil
+		}
+		return false, nil
+	})
 
 	_, err := c.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{

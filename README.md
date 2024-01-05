@@ -11,27 +11,34 @@ Please assist us in testing @master (and post your experiences to [this issue](h
 
 There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project, and its API is very different to this one).
 
-Installation and Build
-----------------------
+Quick Start
+-----------
 
-This client is designed to work with the standard Go tools, so installation is as easy as:
-
-```bash
-go get github.com/eclipse/paho.golang
-```
+We recommend that new users begin with `[autopaho](https://github.com/eclipse/paho.golang/tree/master/autopaho)`; this
+provides a simple client that should be sufficient for most use-cases.
 
 Folder Structure
 ----------------
 
-The main library is in the `paho` folder (so for general usage `import "github.com/eclipse/paho.golang/paho"`). There are 
+The main library is in the `paho` folder (so for general usage `import "github.com/eclipse/paho.golang/paho"`). There are
 examples off this folder in `paho/cmd` and extensions in `paho/extensions`.
 
-`autopaho` (`import "github.com/eclipse/paho.golang/autopaho"`) is a fairly simple wrapper that automates the connection 
-process and will automatically reconnect should the connection drop. For many users this package will provide a simple 
+`autopaho` (`import "github.com/eclipse/paho.golang/autopaho"`) is a fairly simple wrapper that automates the connection
+process and will automatically reconnect should the connection drop. For many users this package will provide a simple
 way to connect and publish/subscribe as well as demonstrating how to use the `paho.golang/paho`.
-`autopaho/examples/docker` provides a full example using docker to run a publisher and subscriber (connecting to 
+`autopaho/examples/docker` provides a full example using docker to run a publisher and subscriber (connecting to
 mosquitto).
 
+Installation and Build
+----------------------
+
+This client is designed to work with the standard Go tools. When using Go Modules import one of the packages 
+(e.g. `import "github.com/eclipse/paho.golang/autopaho"`) and run `go mod tidy`. If you wish to manually add
+the library as a dependency run:
+
+```bash
+go get github.com/eclipse/paho.golang
+```
 
 Reporting bugs
 --------------

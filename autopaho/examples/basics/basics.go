@@ -56,10 +56,13 @@ func main() {
 		ClientConfig: paho.ClientConfig{
 			// If you are using QOS 1/2, then it's important to specify a client id (which must be unique)
 			ClientID: clientID,
-			// The Router will receive any inbound messages (the router can map for you or just pass messages to a single handler)
-			Router: paho.NewStandardRouterWithDefault(func(m *paho.Publish) {
-				fmt.Printf("received message on topic %s; body: %s (retain: %t)\n", m.Topic, m.Payload, m.Retain)
-			}),
+			// OnPublishReceived is a slice of functions that will be called when a message is received.
+			// You can write the function(s) yourself or use the supplied Router
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+				func(pr paho.PublishReceived) (bool, error) {
+					fmt.Printf("received message on topic %s; body: %s (retain: %t)\n", pr.Packet.Topic, pr.Packet.Payload, pr.Packet.Retain)
+					return true, nil
+				}},
 			OnClientError: func(err error) { fmt.Printf("client error: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {
 				if d.Properties != nil {
@@ -93,7 +96,7 @@ func main() {
 				Topic:   topic,
 				Payload: []byte("TestMessage: " + strconv.Itoa(msgCount)),
 			}); err != nil {
-				if ctx.Err() != nil {
+				if ctx.Err() == nil {
 					panic(err) // Publish will exit when context cancelled or if something went wrong
 				}
 			}

@@ -987,7 +987,6 @@ idLoop:
 				c.onPublishReceived = append(c.onPublishReceived[:pos], c.onPublishReceived[pos+1:]...)
 			}
 		}
-
 	}
 }
 

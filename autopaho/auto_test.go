@@ -296,14 +296,16 @@ func TestBasicPubSub(t *testing.T) {
 		PahoErrors:     logger,
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
-			Router: paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {
-				mrMu.Lock()
-				defer mrMu.Unlock()
-				messagesReceived = append(messagesReceived, publish)
-				if len(messagesReceived) == expectedMessages {
-					close(mrDone)
-				}
-			}),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){
+				func(pr paho.PublishReceived) (bool, error) {
+					mrMu.Lock()
+					defer mrMu.Unlock()
+					messagesReceived = append(messagesReceived, pr.Packet)
+					if len(messagesReceived) == expectedMessages {
+						close(mrDone)
+					}
+					return true, nil
+				}},
 		},
 	}
 

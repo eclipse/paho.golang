@@ -117,7 +117,10 @@ func TestQueuedMessages(t *testing.T) {
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
 			Session:  session,
-			Router:   paho.NewStandardRouterWithDefault(func(publish *paho.Publish) {}),
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+				func(pr paho.PublishReceived) (bool, error) {
+					return true, nil
+				}},
 		},
 	}
 
@@ -294,9 +297,12 @@ func TestPreloadPublish(t *testing.T) {
 		CleanStartOnInitialConnection: false, // Want session to stay up (this is the default)
 		SessionExpiryInterval:         600,   // If 0 then the state will be removed when the connection drops
 		ClientConfig: paho.ClientConfig{
-			ClientID:      "test",
-			Session:       session,
-			Router:        paho.NewStandardRouter(),
+			ClientID: "test",
+			Session:  session,
+			OnPublishReceived: []func(paho.PublishReceived) (bool, error){ // Noop handler
+				func(pr paho.PublishReceived) (bool, error) {
+					return true, nil
+				}},
 			PacketTimeout: 250 * time.Millisecond, // test server should be able to respond very quickly!
 		},
 	}

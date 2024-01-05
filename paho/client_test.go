@@ -311,12 +311,14 @@ func TestClientReceiveQoS0(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewStandardRouterWithDefault(func(p *Publish) {
-			assert.Equal(t, "test/0", p.Topic)
-			assert.Equal(t, "test payload", string(p.Payload))
-			assert.Equal(t, byte(0), p.QoS)
-			close(rChan)
-		}),
+		OnPublishReceived: []func(PublishReceived) (bool, error){ // Noop handler
+			func(pr PublishReceived) (bool, error) {
+				assert.Equal(t, "test/0", pr.Packet.Topic)
+				assert.Equal(t, "test payload", string(pr.Packet.Payload))
+				assert.Equal(t, byte(0), pr.Packet.QoS)
+				close(rChan)
+				return true, nil
+			}},
 	})
 	require.NotNil(t, c)
 	defer c.close()
@@ -356,12 +358,14 @@ func TestClientReceiveQoS1(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewStandardRouterWithDefault(func(p *Publish) {
-			assert.Equal(t, "test/1", p.Topic)
-			assert.Equal(t, "test payload", string(p.Payload))
-			assert.Equal(t, byte(1), p.QoS)
-			close(rChan)
-		}),
+		OnPublishReceived: []func(PublishReceived) (bool, error){ // Noop handler
+			func(pr PublishReceived) (bool, error) {
+				assert.Equal(t, "test/1", pr.Packet.Topic)
+				assert.Equal(t, "test payload", string(pr.Packet.Payload))
+				assert.Equal(t, byte(1), pr.Packet.QoS)
+				close(rChan)
+				return true, nil
+			}},
 	})
 	require.NotNil(t, c)
 	defer c.close()
@@ -402,12 +406,14 @@ func TestClientReceiveQoS2(t *testing.T) {
 
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewStandardRouterWithDefault(func(p *Publish) {
-			assert.Equal(t, "test/2", p.Topic)
-			assert.Equal(t, "test payload", string(p.Payload))
-			assert.Equal(t, byte(2), p.QoS)
-			close(rChan)
-		}),
+		OnPublishReceived: []func(PublishReceived) (bool, error){ // Noop handler
+			func(pr PublishReceived) (bool, error) {
+				assert.Equal(t, "test/2", pr.Packet.Topic)
+				assert.Equal(t, "test payload", string(pr.Packet.Payload))
+				assert.Equal(t, byte(2), pr.Packet.QoS)
+				close(rChan)
+				return true, nil
+			}},
 	})
 	require.NotNil(t, c)
 	defer c.close()
@@ -464,10 +470,12 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 	wg.Add(expectedPacketsCount)
 	c := NewClient(ClientConfig{
 		Conn: ts.ClientConn(),
-		Router: NewStandardRouterWithDefault(func(p *Publish) {
-			defer wg.Done()
-			actualPublishPackets = append(actualPublishPackets, *p.Packet())
-		}),
+		OnPublishReceived: []func(PublishReceived) (bool, error){ // Noop handler
+			func(pr PublishReceived) (bool, error) {
+				defer wg.Done()
+				actualPublishPackets = append(actualPublishPackets, *pr.Packet.Packet())
+				return true, nil
+			}},
 	})
 	require.NotNil(t, c)
 	defer c.close()
