@@ -486,9 +486,12 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 	case packets.DISCONNECT:
 		p := cp.Content.(*packets.Disconnect)
 		return fmt.Errorf("disconnect received with resaon %d", p.ReasonCode)
-	// case packets.AUTH: not currently supported
-	// 	cp.Flags = 1
-	// 	cp.Content = &Auth{Properties: &Properties{}}
+	case packets.AUTH:
+		response := packets.NewControlPacket(packets.AUTH)
+		r := response.Content.(*packets.Auth)
+		r.ReasonCode = packets.AuthSuccess
+		out <- response
+		return nil
 	default:
 		return fmt.Errorf("unsupported packet type %d received", cp.Type)
 	}
