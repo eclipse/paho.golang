@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/eclipse/paho.golang/internal/testserver"
+	"github.com/eclipse/paho.golang/packets"
 	paholog "github.com/eclipse/paho.golang/paho/log"
 	"go.uber.org/goleak"
 
@@ -459,6 +460,22 @@ func TestAuthenticate(t *testing.T) {
 	case <-pahoConnUpChan:
 	case <-time.After(shortDelay):
 		t.Fatal("timeout awaiting connection up")
+	}
+
+	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cf()
+	ar, err := cm.Authenticate(ctx, &paho.Auth{
+		ReasonCode: packets.AuthReauthenticate,
+		Properties: &paho.AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("authenticate failed: %s", err)
+	}
+	if !ar.Success {
+		t.Fatal("authenticate failed")
 	}
 
 	cancel() // Cancelling outer context will cascade
