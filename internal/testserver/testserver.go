@@ -487,6 +487,15 @@ func (i *Instance) processIncoming(cp *packets.ControlPacket, out chan<- *packet
 		p := cp.Content.(*packets.Disconnect)
 		return fmt.Errorf("disconnect received with resaon %d", p.ReasonCode)
 	case packets.AUTH:
+		authProp := cp.Content.(*packets.Auth).Properties
+		switch authProp.AuthMethod {
+		case "TEST":
+			if !bytes.Equal(authProp.AuthData, []byte("secret data")) {
+				return fmt.Errorf("invalid authentication data received: %s", authProp.AuthData)
+			}
+		default:
+			return fmt.Errorf("invalid authentication method received: %s", authProp.AuthMethod)
+		}
 		response := packets.NewControlPacket(packets.AUTH)
 		r := response.Content.(*packets.Auth)
 		r.ReasonCode = packets.AuthSuccess
