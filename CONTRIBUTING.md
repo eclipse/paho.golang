@@ -1,5 +1,5 @@
-Contributing to Paho
-====================
+Contributing to Eclipse Paho
+============================
 
 Thanks for your interest in this project.
 
@@ -11,18 +11,45 @@ Paho reflects the inherent physical and cost constraints of device connectivity.
 
 - https://projects.eclipse.org/projects/iot.paho
 
+Terms of Use:
+-------------
+
+This repository is subject to the Terms of Use of the Eclipse Foundation
+
+- https://www.eclipse.org/legal/termsofuse.php
+
+Developer Resources:
+--------------------
+
+Github repositories maintained by the project
+
+- https://projects.eclipse.org/projects/iot.paho/developer
+
+Eclipse Development Process:
+----------------------------
+
+This Eclipse Foundation open project is governed by the Eclipse Foundation Development Process and operates under the terms of the Eclipse IP Policy.
+
+- https://www.eclipse.org/projects/dev_process
+- https://www.eclipse.org/org/documents/Eclipse_IP_Policy.pdf
+
 Eclipse Contributor Agreement:
 ------------------------------
 
-Before your contribution can be accepted by the project, you need to create and electronically sign the Eclipse Contributor Agreement (ECA).
+In order to be able to contribute to Eclipse Foundation projects you must electronically sign the Eclipse Contributor Agreement (ECA).
 
 - https://www.eclipse.org/legal/ECA.php
+
+The ECA provides the Eclipse Foundation with a permanent record that you agree that each of your contributions will comply with the commitments documented in the Developer Certificate of Origin (DCO). Having an ECA on file associated with the email address matching the "Author" field of your contribution's Git commits fulfills the DCO's requirement that you sign-off on your contributions.
+
+For more information, please see the Eclipse Committer Handbook:\
+https://www.eclipse.org/projects/handbook/#resources-commit
 
 Contributing Code:
 ------------------
 
 The Go client is developed in Github, see their documentation on the process of forking and pull requests\
-https://help.github.com/categories/collaborating-on-projects-using-pull-requests/
+https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/getting-started/about-collaborative-development-models
 
 Git commit messages should follow the style described here\
 http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
