@@ -31,8 +31,8 @@ func TestPackedIdNoExhaustion(t *testing.T) {
 	c.stop = make(chan struct{})
 	c.publishPackets = make(chan *packets.Publish)
 	go c.incoming()
-	go c.PingHandler.Start(c.Conn, 30*time.Second)
-	c.Session.ConAckReceived(c.Conn, &packets.Connect{}, &packets.Connack{})
+	go c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
 	for i := 0; i < 70000; i++ {
 		p := &Publish{

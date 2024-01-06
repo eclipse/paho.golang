@@ -23,7 +23,7 @@ func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
 		correlData: make(map[string]chan *paho.Publish),
 	}
 
-	responseTopic := fmt.Sprintf("%s/responses", c.ClientID)
+	responseTopic := fmt.Sprintf("%s/responses", c.ClientID())
 	c.AddOnPublishReceived(func(pr paho.PublishReceived) (bool, error) {
 		if pr.Packet.Topic == responseTopic {
 			h.responseHandler(pr.Packet)
@@ -34,7 +34,7 @@ func NewHandler(ctx context.Context, c *paho.Client) (*Handler, error) {
 
 	_, err := c.Subscribe(ctx, &paho.Subscribe{
 		Subscriptions: []paho.SubscribeOptions{
-			{Topic: fmt.Sprintf("%s/responses", c.ClientID), QoS: 1},
+			{Topic: fmt.Sprintf("%s/responses", c.ClientID()), QoS: 1},
 		},
 	})
 	if err != nil {
@@ -72,7 +72,7 @@ func (h *Handler) Request(ctx context.Context, pb *paho.Publish) (*paho.Publish,
 	}
 
 	pb.Properties.CorrelationData = []byte(cID)
-	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID)
+	pb.Properties.ResponseTopic = fmt.Sprintf("%s/responses", h.c.ClientID())
 	pb.Retain = false
 
 	_, err := h.c.Publish(ctx, pb)
