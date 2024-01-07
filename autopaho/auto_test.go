@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/eclipse/paho.golang/internal/testserver"
+	"github.com/eclipse/paho.golang/packets"
 	paholog "github.com/eclipse/paho.golang/paho/log"
 	"go.uber.org/goleak"
 
@@ -397,6 +398,115 @@ func TestBasicPubSub(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthenticate(t *testing.T) {
+	t.Parallel()
+	server, _ := url.Parse(dummyURL)
+	serverLogger := paholog.NewTestLogger(t, "testServer:")
+	logger := paholog.NewTestLogger(t, "test:")
+
+	ts := testserver.New(serverLogger)
+
+	type tsConnUpMsg struct {
+		cancelFn func()        // Function to cancel test server context
+		done     chan struct{} // Will be closed when the test server has disconnected (and shutdown)
+	}
+	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test server connection is up
+	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
+
+	atCount := 0
+
+	config := ClientConfig{
+		ServerUrls:        []*url.URL{server},
+		KeepAlive:         60,
+		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
+		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
+			atCount += 1
+			if atCount == 2 { // fail on the initial reconnection attempt to exercise retry functionality
+				return nil, errors.New("connection attempt failed")
+			}
+			ctx, cancel := context.WithCancel(ctx)
+			conn, done, err := ts.Connect(ctx)
+			if err == nil { // The above may fail if attempted too quickly (before disconnect processed)
+				tsConnUpChan <- tsConnUpMsg{cancelFn: cancel, done: done}
+			} else {
+				cancel()
+			}
+			return conn, err
+		},
+		OnConnectionUp: func(*ConnectionManager, *paho.Connack) { pahoConnUpChan <- struct{}{} },
+		Debug:          logger,
+		PahoDebug:      logger,
+		PahoErrors:     logger,
+		ClientConfig: paho.ClientConfig{
+			ClientID:    "test",
+			AuthHandler: &fakeAuth{},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cm, err := NewConnection(ctx, config)
+	if err != nil {
+		t.Fatalf("expected NewConnection success: %s", err)
+	}
+
+	var initialConnUpMsg tsConnUpMsg
+	select {
+	case initialConnUpMsg = <-tsConnUpChan:
+	case <-time.After(shortDelay):
+		t.Fatal("timeout awaiting initial connection request")
+	}
+	select {
+	case <-pahoConnUpChan:
+	case <-time.After(shortDelay):
+		t.Fatal("timeout awaiting connection up")
+	}
+
+	ctx, cf := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cf()
+	ar, err := cm.Authenticate(ctx, &paho.Auth{
+		ReasonCode: packets.AuthReauthenticate,
+		Properties: &paho.AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("authenticate failed: %s", err)
+	}
+	if !ar.Success {
+		t.Fatal("authenticate failed")
+	}
+
+	cancel() // Cancelling outer context will cascade
+	select { // Wait for the local client to terminate
+	case <-cm.Done():
+	case <-time.After(shortDelay):
+		t.Fatal("timeout awaiting connection manager shutdown")
+	}
+
+	select { // Wait for test server to terminate
+	case <-initialConnUpMsg.done:
+	case <-time.After(shortDelay):
+		t.Fatal("test server did not shut down in a timely manner")
+	}
+}
+
+// fakeAuth implements the Auther interface to test auto.AuthHandler
+type fakeAuth struct{}
+
+func (f *fakeAuth) Authenticate(a *paho.Auth) *paho.Auth {
+	return &paho.Auth{
+		Properties: &paho.AuthProperties{
+			AuthMethod: "TEST",
+			AuthData:   []byte("secret data"),
+		},
+	}
+}
+
+func (f *fakeAuth) Authenticated() {}
 
 // TestClientConfig_buildConnectPacket exercises buildConnectPacket checking that options and callbacks are applied
 func TestClientConfig_buildConnectPacket(t *testing.T) {
