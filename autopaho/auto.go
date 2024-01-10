@@ -464,7 +464,7 @@ func (c *ConnectionManager) PublishViaQueue(ctx context.Context, p *QueuePublish
 func (c *ConnectionManager) TerminateConnectionForTest() {
 	c.mu.Lock()
 	if c.cli != nil {
-		_ = c.cli.Conn.Close()
+		c.cli.TerminateConnectionForTest()
 	}
 	c.mu.Unlock()
 }
