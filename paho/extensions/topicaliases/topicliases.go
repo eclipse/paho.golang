@@ -1,3 +1,18 @@
+/*
+ * Copyright (c) 2024 Contributors to the Eclipse Foundation
+ *
+ *  All rights reserved. This program and the accompanying materials
+ *  are made available under the terms of the Eclipse Public License v2.0
+ *  and Eclipse Distribution License v1.0 which accompany this distribution.
+ *
+ * The Eclipse Public License is available at
+ *    https://www.eclipse.org/legal/epl-2.0/
+ *  and the Eclipse Distribution License is available at
+ *    http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ *  SPDX-License-Identifier: EPL-2.0 OR BSD-3-Clause
+ */
+
 package topicaliases
 
 import (
@@ -69,14 +84,14 @@ func (t *TAHandler) ResetAlias(topic string, a uint16) {
 // In this case it allows the Topic Alias Handler to automatically replace topic
 // names with alias numbers
 func (t *TAHandler) PublishHook(p *paho.Publish) {
-	//p.Topic is always not "" as the default publish checks before calling hooks
+	// p.Topic is always not "" as the default publish checks before calling hooks
 	if p.Properties != nil && p.Properties.TopicAlias != nil {
-		//topic string is not empty and topic alias is set, reset the alias value.
+		// topic string is not empty and topic alias is set, reset the alias value.
 		t.ResetAlias(p.Topic, *p.Properties.TopicAlias)
 		return
 	}
 
-	//we already have an alias, set it and unset the topic
+	// we already have an alias, set it and unset the topic
 	if a := t.GetAlias(p.Topic); a != 0 {
 		if p.Properties == nil {
 			p.Properties = &paho.PublishProperties{}
@@ -86,7 +101,7 @@ func (t *TAHandler) PublishHook(p *paho.Publish) {
 		return
 	}
 
-	//we don't have an alias, try and get one
+	// we don't have an alias, try and get one
 	if a := t.SetAlias(p.Topic); a != 0 {
 		if p.Properties == nil {
 			p.Properties = &paho.PublishProperties{}
