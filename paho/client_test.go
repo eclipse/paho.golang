@@ -131,7 +131,7 @@ func TestClientSubscribe(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -176,7 +176,7 @@ func TestClientUnsubscribe(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -214,7 +214,7 @@ func TestClientPublishQoS0(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -256,7 +256,7 @@ func TestClientPublishQoS1(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -301,7 +301,7 @@ func TestClientPublishQoS2(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -348,7 +348,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -395,7 +395,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -443,7 +443,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -660,7 +660,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -701,7 +701,7 @@ func TestAuthenticate(t *testing.T) {
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Start(c.config.Conn, 30*time.Second)
+		c.config.PingHandler.Run(c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 

@@ -19,120 +19,168 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/eclipse/paho.golang/packets"
 	"github.com/eclipse/paho.golang/paho/log"
 )
 
-// PingFailHandler is a type for the function that is invoked
-// when we have sent a Pingreq to the server and not received
-// a Pingresp within 1.5x our pingtimeout
-type PingFailHandler func(error)
-
-// Pinger is an interface of the functions for a struct that is
-// used to manage sending PingRequests and responding to
-// PingResponses
-// Start() takes a net.Conn which is a connection over which an
-// MQTT session has already been established, and a time.Duration
-// of the keepalive setting passed to the server when the MQTT
-// session was established.
-// Stop() is used to stop the Pinger
-// PingResp() is the function that is called by the Client when
-// a PingResponse is received
-// SetDebug() is used to pass in a Logger to be used to log debug
-// information, for example sharing a logger with the main client
 type Pinger interface {
-	Start(net.Conn, time.Duration)
+	// Run() starts the pinger. It blocks until the pinger is stopped.
+	// If the pinger stops due to an error, it returns the error.
+	// If the keepAlive is 0, it returns nil immediately.
+	// Run() must be called only once.
+	Run(conn net.Conn, keepAlive uint16) error
+
+	// Stop() gracefully stops the pinger.
 	Stop()
+
+	// PacketSent() is called when a packet is sent to the server.
+	PacketSent()
+
+	// PingResp() is called when a PINGRESP is received from the server.
 	PingResp()
+
+	// SetDebug() sets the logger for debugging.
+	// It is not thread-safe and must be called before Run() to avoid race conditions.
 	SetDebug(log.Logger)
 }
 
-// PingHandler is the library provided default Pinger
-type PingHandler struct {
-	mu              sync.Mutex
-	lastPing        time.Time
-	conn            net.Conn
-	stop            chan struct{}
-	pingFailHandler PingFailHandler
-	pingOutstanding int32
-	debug           log.Logger
+// DefaultPinger is the default implementation of Pinger.
+type DefaultPinger struct {
+	timer             *time.Timer
+	keepAlive         uint16
+	conn              net.Conn
+	previousPingAcked chan struct{}
+	done              chan struct{}
+	errChan           chan error
+	ackReceived       chan struct{}
+	stopOnce          sync.Once
+	mu                sync.Mutex
+	debug             log.Logger
 }
 
-// DefaultPingerWithCustomFailHandler returns an instance of the
-// default Pinger but with a custom PingFailHandler that is called
-// when the client has not received a response to a PingRequest
-// within the appropriate amount of time
-func DefaultPingerWithCustomFailHandler(pfh PingFailHandler) *PingHandler {
-	return &PingHandler{
-		pingFailHandler: pfh,
-		debug:           log.NOOPLogger{},
+func NewDefaultPinger() *DefaultPinger {
+	previousPingAcked := make(chan struct{}, 1)
+	previousPingAcked <- struct{}{} // initial value
+	return &DefaultPinger{
+		previousPingAcked: previousPingAcked,
+		errChan:           make(chan error, 1),
+		done:              make(chan struct{}),
+		ackReceived:       make(chan struct{}, 1),
+		debug:             log.NOOPLogger{},
 	}
 }
 
-// Start is the library provided Pinger's implementation of
-// the required interface function()
-func (p *PingHandler) Start(c net.Conn, pt time.Duration) {
+func (p *DefaultPinger) Run(conn net.Conn, keepAlive uint16) error {
+	if keepAlive == 0 {
+		p.debug.Println("Run() returning immediately due to keepAlive == 0")
+		return nil
+	}
+	if conn == nil {
+		return fmt.Errorf("conn is nil")
+	}
 	p.mu.Lock()
-	p.conn = c
-	p.stop = make(chan struct{})
-	p.mu.Unlock()
-	checkTicker := time.NewTicker(pt / 4)
-	defer checkTicker.Stop()
-	for {
-		select {
-		case <-p.stop:
-			return
-		case <-checkTicker.C:
-			if atomic.LoadInt32(&p.pingOutstanding) > 0 && time.Since(p.lastPing) > (pt+pt>>1) {
-				p.pingFailHandler(fmt.Errorf("ping resp timed out"))
-				// ping outstanding and not reset in 1.5 times ping timer
-				return
-			}
-			if time.Since(p.lastPing) >= pt {
-				// time to send a ping
-				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
-					if p.pingFailHandler != nil {
-						p.pingFailHandler(err)
-					}
-					return
-				}
-				atomic.AddInt32(&p.pingOutstanding, 1)
-				p.lastPing = time.Now()
-				p.debug.Println("pingHandler sending ping request")
-			}
-		}
+	if p.timer != nil {
+		p.mu.Unlock()
+		return fmt.Errorf("Run() already called")
 	}
+	select {
+	case <-p.done:
+		p.mu.Unlock()
+		return fmt.Errorf("Run() called after stop()")
+	default:
+	}
+	p.keepAlive = keepAlive
+	p.conn = conn
+	p.timer = time.AfterFunc(0, p.sendPingreq) // Immediately send first pingreq
+	p.mu.Unlock()
+
+	return <-p.errChan
 }
 
-// Stop is the library provided Pinger's implementation of
-// the required interface function()
-func (p *PingHandler) Stop() {
+func (p *DefaultPinger) Stop() {
+	p.stop(nil)
+}
+
+func (p *DefaultPinger) PacketSent() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.stop == nil {
+	if p.timer == nil {
+		p.debug.Println("PacketSent() called before Run()")
 		return
 	}
-	p.debug.Println("pingHandler stopping")
 	select {
-	case <-p.stop:
-		// Already stopped, do nothing
+	case <-p.done:
+		p.debug.Println("PacketSent() returning due to done channel")
+		return
 	default:
-		close(p.stop)
+	}
+
+	p.debug.Println("PacketSent() resetting timer")
+	p.timer.Reset(time.Duration(p.keepAlive) * time.Second)
+}
+
+func (p *DefaultPinger) PingResp() {
+	select {
+	case p.ackReceived <- struct{}{}:
+	default:
+		p.debug.Println("PingResp() called when ackReceived channel is full")
+		p.stop(fmt.Errorf("received unexpected PINGRESP"))
 	}
 }
 
-// PingResp is the library provided Pinger's implementation of
-// the required interface function()
-func (p *PingHandler) PingResp() {
-	p.debug.Println("pingHandler resetting pingOutstanding")
-	atomic.StoreInt32(&p.pingOutstanding, 0)
+func (p *DefaultPinger) SetDebug(debug log.Logger) {
+	p.debug = debug
 }
 
-// SetDebug sets the logger l to be used for printing debug
-// information for the pinger
-func (p *PingHandler) SetDebug(l log.Logger) {
-	p.debug = l
+func (p *DefaultPinger) sendPingreq() {
+	// Wait for previous ping to be acked before sending another
+	select {
+	case <-p.previousPingAcked:
+	case <-p.done:
+		p.debug.Println("sendPingreq() returning before sending PINGREQ due to done channel")
+		return
+	}
+
+	p.debug.Println("sendPingreq() sending PINGREQ packet")
+	if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
+		p.stop(fmt.Errorf("failed to send PINGREQ: %w", err))
+		p.debug.Printf("sendPingreq() calling stop() and returning due to packet write error: %v", err)
+		return
+	}
+	p.debug.Println("sendPingreq() sent PINGREQ packet, waiting for PINGRESP")
+	pingrespTimeout := time.NewTimer(time.Duration(p.keepAlive) * time.Second)
+
+	p.PacketSent()
+
+	select {
+	case <-p.done:
+		p.debug.Println("sendPingreq() returning after sending PINGREQ due to done channel")
+	case <-p.ackReceived:
+		p.previousPingAcked <- struct{}{}
+		p.debug.Println("sendPingreq() returning after receiving PINGRESP")
+	case <-pingrespTimeout.C:
+		p.debug.Println("sendPingreq() calling stop() and returning due to PINGRESP timeout")
+		p.stop(fmt.Errorf("PINGRESP timed out"))
+		return
+	}
+
+	// Stop the timer if it hasn't fired yet
+	if !pingrespTimeout.Stop() {
+		<-pingrespTimeout.C
+	}
+}
+
+func (p *DefaultPinger) stop(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.debug.Printf("stop() called with error: %v", err)
+	p.stopOnce.Do(func() {
+		if p.timer != nil {
+			p.timer.Stop()
+		}
+		p.errChan <- err
+		close(p.done)
+	})
 }

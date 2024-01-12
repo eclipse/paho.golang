@@ -70,8 +70,9 @@ type (
 		Session          session.SessionManager
 		autoCloseSession bool
 
-		AuthHandler Auther
-		PingHandler Pinger
+		AuthHandler   Auther
+		PingHandler   Pinger
+		defaultPinger bool
 
 		// Router - new inbound messages will be passed to the `Route(*packets.Publish)` function.
 		//
@@ -199,9 +200,8 @@ func NewClient(conf ClientConfig) *Client {
 	c.onPublishReceivedTracker = make([]int, len(c.onPublishReceived)) // Must have the same number of elements as onPublishReceived
 
 	if c.config.PingHandler == nil {
-		c.config.PingHandler = DefaultPingerWithCustomFailHandler(func(e error) {
-			go c.error(e)
-		})
+		c.config.defaultPinger = true
+		c.config.PingHandler = NewDefaultPinger()
 	}
 	if c.config.OnClientError == nil {
 		c.config.OnClientError = func(e error) {}
@@ -340,15 +340,15 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		c.serverProps.SharedSubAvailable = ca.Properties.SharedSubAvailable
 	}
 
-	if keepalive > 0 { // "Keep Alive value of 0 has the effect of turning off..."
-		c.debug.Println("received CONNACK, starting PingHandler")
-		c.workers.Add(1)
-		go func() {
-			defer c.workers.Done()
-			defer c.debug.Println("returning from ping handler worker")
-			c.config.PingHandler.Start(c.config.Conn, time.Duration(keepalive)*time.Second)
-		}()
-	}
+	c.debug.Println("received CONNACK, starting PingHandler")
+	c.workers.Add(1)
+	go func() {
+		defer c.workers.Done()
+		defer c.debug.Println("returning from ping handler worker")
+		if err := c.config.PingHandler.Run(c.config.Conn, keepalive); err != nil {
+			go c.error(fmt.Errorf("ping handler error: %w", err))
+		}
+	}()
 
 	c.debug.Println("starting publish packets loop")
 	c.workers.Add(1)
@@ -502,6 +502,7 @@ func (c *Client) incoming() {
 							go c.error(err)
 							return
 						}
+						c.config.PingHandler.PacketSent()
 					}
 				}
 			case packets.PUBLISH:
@@ -619,6 +620,7 @@ func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, erro
 	if _, err := a.Packet().WriteTo(c.config.Conn); err != nil {
 		return nil, err
 	}
+	c.config.PingHandler.PacketSent()
 
 	var rp packets.ControlPacket
 	select {
@@ -679,6 +681,7 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		// The packet will remain in the session state until `Session` is notified of the disconnection.
 		return nil, err
 	}
+	c.config.PingHandler.PacketSent()
 
 	c.debug.Println("waiting for SUBACK")
 	subCtx, cf := context.WithTimeout(ctx, c.config.PacketTimeout)
@@ -743,6 +746,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 		// The packet will remain in the session state until `Session` is notified of the disconnection.
 		return nil, err
 	}
+	c.config.PingHandler.PacketSent()
 
 	unsubCtx, cf := context.WithTimeout(ctx, c.config.PacketTimeout)
 	defer cf()
@@ -849,6 +853,7 @@ func (c *Client) PublishWithOptions(ctx context.Context, p *Publish, o PublishOp
 			go c.error(err)
 			return nil, err
 		}
+		c.config.PingHandler.PacketSent()
 		return nil, nil
 	case 1, 2:
 		return c.publishQoS12(ctx, pb, o)
@@ -875,6 +880,7 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish, o Publis
 			return nil, ErrNetworkErrorAfterStored // Async send, so we don't wait for the response (may add callbacks in the future to enable user to obtain status)
 		}
 	}
+	c.config.PingHandler.PacketSent()
 
 	if o.Method == PublishMethod_AsyncSend {
 		return nil, nil // Async send, so we don't wait for the response (may add callbacks in the future to enable user to obtain status)
