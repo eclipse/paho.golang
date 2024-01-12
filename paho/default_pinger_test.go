@@ -39,6 +39,7 @@ func TestDefaultPingerTimeout(t *testing.T) {
 			}
 		}
 	}()
+	defer fakeServerConn.Close()
 
 	pinger := NewDefaultPinger()
 	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
@@ -82,8 +83,67 @@ func TestDefaultPingerSuccess(t *testing.T) {
 			}
 		}
 	}()
+	defer fakeServerConn.Close()
 
 	select {
+	case err := <-pingResult:
+		t.Errorf("expected DefaultPinger to not return error, got %v", err)
+	case <-time.After(10 * time.Second):
+		// PASS
+	}
+}
+
+func TestDefaultPingerPacketSent(t *testing.T) {
+	fakeClientConn, fakeServerConn := net.Pipe()
+
+	pinger := NewDefaultPinger()
+	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
+
+	pingResult := make(chan error, 1)
+	go func() {
+		pingResult <- pinger.Run(fakeClientConn, 3)
+	}()
+	defer pinger.Stop()
+
+	// keep calling PacketSent() in a goroutine to check that the Pinger avoids sending PINGREQs when not needed
+	stop := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			// keep calling PacketSent()
+			pinger.PacketSent()
+		}
+	}()
+	defer close(stop)
+
+	// keep reading from fakeServerConn and call PingResp() when a PINGREQ is received
+	// if more than one PINGREQ is received, the test will fail
+	count := 0
+	tooManyPingreqs := make(chan struct{})
+	go func() {
+		for {
+			recv, err := packets.ReadPacket(fakeServerConn)
+			if err != nil {
+				return
+			}
+			if recv.Type == packets.PINGREQ {
+				count++
+				pinger.PingResp()
+				if count > 1 { // we allow the count to be 1 because the first PINGREQ is sent immediately
+					close(tooManyPingreqs)
+				}
+			}
+		}
+	}()
+	defer fakeServerConn.Close()
+
+	select {
+	case <-tooManyPingreqs:
+		t.Error("expected DefaultPinger to not send PINGREQs when not needed")
 	case err := <-pingResult:
 		t.Errorf("expected DefaultPinger to not return error, got %v", err)
 	case <-time.After(10 * time.Second):
