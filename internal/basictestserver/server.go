@@ -79,14 +79,28 @@ func (t *TestServer) Stop() {
 
 func (t *TestServer) Run() {
 	defer close(t.done)
+
+	incoming := make(chan *packets.ControlPacket, 65535)
+
+	// read incoming packets in a separate goroutine to avoid deadlocks due to unbuffered t.conn
+	go func() {
+		for {
+			recv, err := packets.ReadPacket(t.conn)
+			if err != nil {
+				t.logger.Println("error in test server reading packet", err)
+				close(incoming)
+				return
+			}
+			incoming <- recv
+		}
+	}()
+
 	for {
 		select {
 		case <-t.stop:
 			return
-		default:
-			recv, err := packets.ReadPacket(t.conn)
-			if err != nil {
-				t.logger.Println("error in test server reading packet", err)
+		case recv, ok := <-incoming:
+			if !ok {
 				return
 			}
 			t.logger.Println("test server received a control packet:", recv.PacketType())
@@ -179,7 +193,7 @@ func (t *TestServer) Run() {
 				t.logger.Println("test server sending pingresp")
 				pr := packets.NewControlPacket(packets.PINGRESP)
 				if _, err := pr.WriteTo(t.conn); err != nil {
-					t.logger.Println("error writing pingreq", err)
+					t.logger.Println("error writing pingresp", err)
 				}
 			}
 		}
