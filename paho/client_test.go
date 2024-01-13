@@ -81,7 +81,7 @@ func TestClientConnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	cp := &Connect{
@@ -119,7 +119,7 @@ func TestClientSubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -164,7 +164,7 @@ func TestClientUnsubscribe(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -202,7 +202,7 @@ func TestClientPublishQoS0(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -244,7 +244,7 @@ func TestClientPublishQoS1(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -289,7 +289,7 @@ func TestClientPublishQoS2(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -336,7 +336,7 @@ func TestClientReceiveQoS0(t *testing.T) {
 			}},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -383,7 +383,7 @@ func TestClientReceiveQoS1(t *testing.T) {
 			}},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -431,7 +431,7 @@ func TestClientReceiveQoS2(t *testing.T) {
 			}},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -493,7 +493,7 @@ func TestClientReceiveAndAckInOrder(t *testing.T) {
 			}},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	ctx := context.Background()
@@ -577,7 +577,7 @@ func TestManualAcksInOrder(t *testing.T) {
 		EnableManualAcknowledgment: true,
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	ctx := context.Background()
@@ -648,7 +648,7 @@ func TestReceiveServerDisconnect(t *testing.T) {
 		},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -689,7 +689,7 @@ func TestAuthenticate(t *testing.T) {
 		AuthHandler: &fakeAuth{},
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	c.stop = make(chan struct{})
@@ -788,7 +788,7 @@ func TestAuthenticateOnConnect(t *testing.T) {
 		AuthHandler: &auther,
 	})
 	require.NotNil(t, c)
-	defer c.close()
+	defer c.close(nil)
 	c.SetDebugLogger(clientLogger)
 
 	cp := &Connect{
@@ -884,7 +884,7 @@ func TestDisconnect(t *testing.T) {
 	})
 	require.NotNil(t, c)
 	c.SetDebugLogger(clientLogger)
-	defer c.close()
+	defer c.close(nil)
 
 	ctx := context.Background()
 	ca, err := c.Connect(ctx, &Connect{
@@ -945,7 +945,7 @@ func TestCloseDeadlock(t *testing.T) {
 	for i := 0; i < routines; i++ {
 		go func() {
 			defer wg.Done()
-			c.close()
+			c.close(nil)
 		}()
 		go func() {
 			defer wg.Done()
@@ -1009,7 +1009,7 @@ func TestSendOnClosedChannel(t *testing.T) {
 	}()
 
 	time.Sleep(10 * time.Millisecond)
-	c.close()
+	c.close(nil)
 }
 
 func isChannelClosed(ch chan struct{}) (closed bool) {
