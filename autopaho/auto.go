@@ -594,7 +594,12 @@ connectionLoop:
 				c.debug.Printf("publishing message from queue with topic %s", pub2.Topic)
 				if _, err = cli.PublishWithOptions(ctx, &pub2, paho.PublishOptions{Method: paho.PublishMethod_AsyncSend}); err != nil {
 					c.errors.Printf("error publishing from queue: %s", err)
-					if errors.Is(err, paho.ErrNetworkErrorAfterStored) { // Message in session so remove from queue
+					if errors.Is(err, paho.ErrInvalidArguments) { // Some errors should not be retried
+						if err := entry.Remove(); err != nil {
+							c.errors.Printf("error removing queue entry: %s", err)
+						}
+						// Need a way to notify the user of this
+					} else if errors.Is(err, paho.ErrNetworkErrorAfterStored) { // Message in session so remove from queue
 						if err := entry.Remove(); err != nil {
 							c.errors.Printf("error removing queue entry: %s", err)
 						}

@@ -44,6 +44,8 @@ var (
 	ErrManualAcknowledgmentDisabled = errors.New("manual acknowledgments disabled")
 	ErrNetworkErrorAfterStored      = errors.New("error after packet added to state")         // Could not send packet but its stored (and response will be sent on chan at some point in the future)
 	ErrConnectionLost               = errors.New("connection lost after request transmitted") // We don't know whether the server received the request or not
+
+	ErrInvalidArguments = errors.New("invalid argument") // If included (errors.Join) in an error, there is a problem with the arguments passed. Retrying on the same connection with the same arguments will not succeed.
 )
 
 type (
@@ -652,17 +654,17 @@ func (c *Client) Subscribe(ctx context.Context, s *Subscribe) (*Suback, error) {
 		for _, sub := range s.Subscriptions {
 			if strings.ContainsAny(sub.Topic, "#+") {
 				// Using a wildcard in a subscription when not supported
-				return nil, fmt.Errorf("cannot subscribe to %s, server does not support wildcards", sub.Topic)
+				return nil, fmt.Errorf("%w: cannot subscribe to %s, server does not support wildcards", ErrInvalidArguments, sub.Topic)
 			}
 		}
 	}
 	if !c.serverProps.SubIDAvailable && s.Properties != nil && s.Properties.SubscriptionIdentifier != nil {
-		return nil, fmt.Errorf("cannot send subscribe with subID set, server does not support subID")
+		return nil, fmt.Errorf("%w: cannot send subscribe with subID set, server does not support subID", ErrInvalidArguments)
 	}
 	if !c.serverProps.SharedSubAvailable {
 		for _, sub := range s.Subscriptions {
 			if strings.HasPrefix(sub.Topic, "$share") {
-				return nil, fmt.Errorf("cannont subscribe to %s, server does not support shared subscriptions", sub.Topic)
+				return nil, fmt.Errorf("%w: cannont subscribe to %s, server does not support shared subscriptions", ErrInvalidArguments, sub.Topic)
 			}
 		}
 	}
@@ -824,18 +826,18 @@ type PublishOptions struct {
 // Warning: Publish may outlive the connection when QOS1+ (managed in `session_state`)
 func (c *Client) PublishWithOptions(ctx context.Context, p *Publish, o PublishOptions) (*PublishResponse, error) {
 	if p.QoS > c.serverProps.MaximumQoS {
-		return nil, fmt.Errorf("cannot send Publish with QoS %d, server maximum QoS is %d", p.QoS, c.serverProps.MaximumQoS)
+		return nil, fmt.Errorf("%w: cannot send Publish with QoS %d, server maximum QoS is %d", ErrInvalidArguments, p.QoS, c.serverProps.MaximumQoS)
 	}
 	if p.Properties != nil && p.Properties.TopicAlias != nil {
 		if c.serverProps.TopicAliasMaximum > 0 && *p.Properties.TopicAlias > c.serverProps.TopicAliasMaximum {
-			return nil, fmt.Errorf("cannot send publish with TopicAlias %d, server topic alias maximum is %d", *p.Properties.TopicAlias, c.serverProps.TopicAliasMaximum)
+			return nil, fmt.Errorf("%w: cannot send publish with TopicAlias %d, server topic alias maximum is %d", ErrInvalidArguments, *p.Properties.TopicAlias, c.serverProps.TopicAliasMaximum)
 		}
 	}
 	if !c.serverProps.RetainAvailable && p.Retain {
-		return nil, fmt.Errorf("cannot send Publish with retain flag set, server does not support retained messages")
+		return nil, fmt.Errorf("%w: cannot send Publish with retain flag set, server does not support retained messages", ErrInvalidArguments)
 	}
 	if (p.Properties == nil || p.Properties.TopicAlias == nil) && p.Topic == "" {
-		return nil, fmt.Errorf("cannot send a publish with no TopicAlias and no Topic set")
+		return nil, fmt.Errorf("%w: cannot send a publish with no TopicAlias and no Topic set", ErrInvalidArguments)
 	}
 
 	if c.config.PublishHook != nil {

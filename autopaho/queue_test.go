@@ -18,6 +18,7 @@ package autopaho
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -27,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/eclipse/paho.golang/autopaho/queue"
 	memqueue "github.com/eclipse/paho.golang/autopaho/queue/memory"
 	"github.com/eclipse/paho.golang/internal/testserver"
 	"github.com/eclipse/paho.golang/packets"
@@ -145,7 +147,20 @@ func TestQueuedMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected NewConnection success: %s", err)
 	}
+
 	testFmt := "Test%d"
+	// Start with an invalid message; this will be queued but then rejected by paho.PublishWithOptions, and it's
+	// important that it's discarded (otherwise it would be retried continually) - issue #214
+	if err = cm.PublishViaQueue(ctx, &QueuePublish{
+		Publish: &paho.Publish{
+			QoS:        3,
+			Topic:      fmt.Sprintf(testFmt, 0),
+			Properties: nil,
+			Payload:    []byte(fmt.Sprintf(testFmt, 0)),
+		},
+	}); err != nil {
+		t.Fatalf("invalid publish failed")
+	}
 
 	// Transmit first 100 messages (should go into queue)
 	for i := 1; i <= 100; i++ {
@@ -219,6 +234,11 @@ func TestQueuedMessages(t *testing.T) {
 	case <-tsDone:
 	case <-time.After(shortDelay):
 		t.Fatal("test server did not shutdown within expected time")
+	}
+
+	// Check that the queue is empty
+	if _, err := cm.queue.Peek(); !errors.Is(err, queue.ErrEmpty) {
+		t.Error("queue should be empty")
 	}
 
 	// Check that we received the expected messages, in the expected order
