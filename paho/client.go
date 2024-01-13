@@ -48,6 +48,14 @@ var (
 	ErrInvalidArguments = errors.New("invalid argument") // If included (errors.Join) in an error, there is a problem with the arguments passed. Retrying on the same connection with the same arguments will not succeed.
 )
 
+type pingerError struct {
+	error
+}
+
+func (pe *pingerError) Error() string {
+	return pe.error.Error()
+}
+
 type (
 	PublishReceived struct {
 		Packet *Publish
@@ -348,7 +356,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		defer c.workers.Done()
 		defer c.debug.Println("returning from ping handler worker")
 		if err := c.config.PingHandler.Run(c.config.Conn, keepalive); err != nil {
-			go c.error(fmt.Errorf("ping handler error: %w", err))
+			go c.error(&pingerError{fmt.Errorf("ping handler error: %w", err)})
 		}
 	}()
 
@@ -548,7 +556,7 @@ func (c *Client) incoming() {
 	}
 }
 
-func (c *Client) close() {
+func (c *Client) close(e error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -563,8 +571,10 @@ func (c *Client) close() {
 	close(c.stop)
 
 	c.debug.Println("client stopped")
-	c.config.PingHandler.Stop()
-	c.debug.Println("ping stopped")
+	if _, ok := e.(*pingerError); !ok {
+		c.config.PingHandler.Stop()
+		c.debug.Println("ping stopped")
+	}
 	_ = c.config.Conn.Close()
 	c.debug.Println("conn closed")
 	c.acksTracker.reset()
@@ -587,12 +597,12 @@ func (c *Client) close() {
 // It also closes the client network connection.
 func (c *Client) error(e error) {
 	c.debug.Println("error called:", e)
-	c.close()
+	c.close(e)
 	go c.config.OnClientError(e)
 }
 
 func (c *Client) serverDisconnect(d *Disconnect) {
-	c.close()
+	c.close(nil)
 	c.debug.Println("calling OnServerDisconnect")
 	go c.config.OnServerDisconnect(d)
 }
@@ -973,7 +983,7 @@ func (c *Client) Disconnect(d *Disconnect) error {
 	c.debug.Println("disconnecting", d)
 	_, err := d.Packet().WriteTo(c.config.Conn)
 
-	c.close()
+	c.close(nil)
 
 	return err
 }
