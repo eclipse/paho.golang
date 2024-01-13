@@ -101,6 +101,7 @@ func (s *Store) Put(packetID uint16, packetType byte, w io.WriterTo) error {
 		_ = os.Remove(tmpFn)
 		return fmt.Errorf("failed to write packet to temp file: %w", err)
 	}
+	f.Sync() // want timestamps to be as accurate as possible (close and rename do not imply sync)
 	if err = f.Close(); err != nil {
 		_ = os.Remove(tmpFn)
 		return fmt.Errorf("failed to close temp file: %w", err)
