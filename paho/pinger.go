@@ -96,7 +96,11 @@ func (p *DefaultPinger) Run(conn net.Conn, keepAlive uint16) error {
 	p.timer = time.AfterFunc(0, p.sendPingreq) // Immediately send first pingreq
 	p.mu.Unlock()
 
-	return <-p.errChan
+	err := <-p.errChan
+
+	p.reset()
+
+	return err
 }
 
 func (p *DefaultPinger) Stop() {
@@ -170,6 +174,18 @@ func (p *DefaultPinger) sendPingreq() {
 	if !pingrespTimeout.Stop() {
 		<-pingrespTimeout.C
 	}
+}
+
+func (p *DefaultPinger) reset() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.timer = nil
+	p.previousPingAcked = make(chan struct{}, 1)
+	p.previousPingAcked <- struct{}{} // initial value
+	p.done = make(chan struct{})
+	p.errChan = make(chan error, 1)
+	p.ackReceived = make(chan struct{}, 1)
+	p.stopOnce = sync.Once{}
 }
 
 func (p *DefaultPinger) stop(err error) {
