@@ -43,10 +43,10 @@ func TestPackedIdNoExhaustion(t *testing.T) {
 	})
 	require.NotNil(t, c)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
-	go c.incoming()
-	go c.config.PingHandler.Run(c.config.Conn, 30)
+	go c.incoming(clientCtx)
+	go c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
 	for i := 0; i < 70000; i++ {

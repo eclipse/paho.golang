@@ -127,9 +127,9 @@ func main() {
 					Payload: msg,
 				})
 				if err != nil {
-					fmt.Printf("error publishing: %s\n", err)
+					fmt.Printf("error publishing message %s: %s\n", msg, err)
 				} else if pr.ReasonCode != 0 && pr.ReasonCode != 16 { // 16 = Server received message but there are no subscribers
-					fmt.Printf("reason code %d received\n", pr.ReasonCode)
+					fmt.Printf("reason code %d received for message %s\n", pr.ReasonCode, msg)
 				} else if cfg.printMessages {
 					fmt.Printf("sent message: %s\n", msg)
 				}

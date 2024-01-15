@@ -122,16 +122,16 @@ func TestClientSubscribe(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -167,16 +167,16 @@ func TestClientUnsubscribe(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -205,16 +205,16 @@ func TestClientPublishQoS0(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -247,16 +247,16 @@ func TestClientPublishQoS1(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -292,16 +292,16 @@ func TestClientPublishQoS2(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -339,16 +339,16 @@ func TestClientReceiveQoS0(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -386,16 +386,16 @@ func TestClientReceiveQoS1(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -434,16 +434,16 @@ func TestClientReceiveQoS2(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 	go c.routePublishPackets()
@@ -651,16 +651,16 @@ func TestReceiveServerDisconnect(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -692,16 +692,16 @@ func TestAuthenticate(t *testing.T) {
 	defer c.close()
 	c.SetDebugLogger(clientLogger)
 
-	c.stop = make(chan struct{})
+	clientCtx := basicClientInitialisation(c)
 	c.publishPackets = make(chan *packets.Publish)
 	c.workers.Add(2)
 	go func() {
 		defer c.workers.Done()
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 	go func() {
 		defer c.workers.Done()
-		c.config.PingHandler.Run(c.config.Conn, 30)
+		c.config.PingHandler.Run(clientCtx, c.config.Conn, 30)
 	}()
 	c.config.Session.ConAckReceived(c.config.Conn, &packets.Connect{}, &packets.Connack{})
 
@@ -818,17 +818,23 @@ func TestCleanup(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	basicClientInitialisation(c)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // canceling to make the client fail on the connection attempt
+	cancel() // cancelling to make the client fail on the connection attempt
 	ca, err := c.Connect(ctx, &Connect{
 		ClientID: "testClient",
 	})
 	require.True(t, errors.Is(err, context.Canceled))
 	require.Nil(t, ca)
 
-	// verify that client was closed properly
-	require.True(t, isChannelClosed(c.stop))
+	// client should have shutdown cleanly (and waited before returning)
+	select {
+	case <-c.Done():
+	default:
+		t.Error("client should be done")
+
+	}
 
 	// verify that it's possible to try again
 	ts.Stop()
@@ -883,6 +889,7 @@ func TestDisconnect(t *testing.T) {
 		Conn: ts.ClientConn(),
 	})
 	require.NotNil(t, c)
+	basicClientInitialisation(c)
 	c.SetDebugLogger(clientLogger)
 	defer c.close()
 
@@ -900,7 +907,14 @@ func TestDisconnect(t *testing.T) {
 
 	err = c.Disconnect(&Disconnect{})
 	require.NoError(t, err)
-	require.True(t, isChannelClosed(c.stop))
+
+	// client should have shutdown cleanly (and waited before returning)
+	select {
+	case <-c.Done():
+	default:
+		t.Error("client should be done")
+
+	}
 
 	// disconnect again should return an error but not block
 	err = c.Disconnect(&Disconnect{})
@@ -1012,17 +1026,6 @@ func TestSendOnClosedChannel(t *testing.T) {
 	c.close()
 }
 
-func isChannelClosed(ch chan struct{}) (closed bool) {
-	defer func() {
-		err, ok := recover().(error)
-		if ok && err.Error() == "send on closed channel" {
-			closed = true
-		}
-	}()
-	ch <- struct{}{}
-	return
-}
-
 // fakeAuth implements the Auther interface to test client.AuthHandler
 type fakeAuth struct{}
 
@@ -1101,4 +1104,15 @@ func TestAddOnPublishReceived(t *testing.T) {
 	require.Equal(t, 3, testOne, "Expected 3")
 	require.Equal(t, 3, testTwo, "Expected 3")
 	require.Equal(t, 1, testThree, "Expected 1")
+}
+
+// basicClientInitialisation initialises a Client that will be used without calling Connect
+// performs the least configuration possible such that calling `close()` will cleanly shutdown
+func basicClientInitialisation(c *Client) context.Context {
+	ctx, cancelFunc := context.WithCancel(context.Background())
+	c.cancelFunc = cancelFunc
+	done := make(chan struct{})
+	c.done = done
+	context.AfterFunc(ctx, func() { c.shutdown(done) })
+	return ctx
 }
