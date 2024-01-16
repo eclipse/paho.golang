@@ -362,9 +362,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 
 	c.debug.Println("received CONNACK, starting PingHandler")
-	if c.config.defaultPinger { // Debug logger is set after the client is created so need to copy it to pinger
-		c.config.PingHandler.SetDebug(c.debug)
-	}
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
@@ -1048,6 +1045,9 @@ func (c *Client) SetDebugLogger(l log.Logger) {
 	c.debug = l
 	if c.config.autoCloseSession { // If we created the session store then it should use the same logger
 		c.config.Session.SetDebugLogger(l)
+	}
+	if c.config.defaultPinger { // Debug logger is set after the client is created so need to copy it to pinger
+		c.config.PingHandler.SetDebug(c.debug)
 	}
 }
 
