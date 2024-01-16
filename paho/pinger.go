@@ -106,7 +106,7 @@ func (p *DefaultPinger) Run(ctx context.Context, conn net.Conn, keepAlive uint16
 
 			if t.Before(pingDue) {
 				// A Control Packet has been sent since we last checked, meaning the ping can be delayed
-				timer.Reset(t.Sub(pingDue))
+				timer.Reset(pingDue.Sub(t))
 				continue
 			}
 
