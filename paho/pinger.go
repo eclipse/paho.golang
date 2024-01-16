@@ -81,8 +81,8 @@ func (p *DefaultPinger) Run(ctx context.Context, conn net.Conn, keepAlive uint16
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
-		p.mu.Unlock()
 		p.running = false
+		p.mu.Unlock()
 	}()
 
 	interval := time.Duration(keepAlive) * time.Second
