@@ -72,8 +72,9 @@ type (
 		Session          session.SessionManager
 		autoCloseSession bool
 
-		AuthHandler Auther
-		PingHandler Pinger
+		AuthHandler   Auther
+		PingHandler   Pinger
+		defaultPinger bool
 
 		// Router - new inbound messages will be passed to the `Route(*packets.Publish)` function.
 		//
@@ -207,6 +208,7 @@ func NewClient(conf ClientConfig) *Client {
 
 	if c.config.PingHandler == nil {
 		c.config.PingHandler = NewDefaultPinger()
+		c.config.defaultPinger = true
 	}
 	if c.config.OnClientError == nil {
 		c.config.OnClientError = func(e error) {}
@@ -238,7 +240,8 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	c.connectCalled = true
 	c.connectCalledMu.Unlock()
 
-	// The passed in ctx applies to the connection process only. clientCtx applies to Client (signals
+	// The passed in ctx applies to the connection process only. clientCtx applies to Client (signals that the
+	// client should shut down).
 	clientCtx, cancelFunc := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	cleanup := func() {
@@ -359,6 +362,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	}
 
 	c.debug.Println("received CONNACK, starting PingHandler")
+	if c.config.defaultPinger { // Debug logger is set after the client is created so need to copy it to pinger
+		c.config.PingHandler.SetDebug(c.debug)
+	}
 	c.workers.Add(1)
 	go func() {
 		defer c.workers.Done()
