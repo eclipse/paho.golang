@@ -16,6 +16,7 @@
 package paho
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
@@ -44,11 +45,12 @@ func TestDefaultPingerTimeout(t *testing.T) {
 	pinger := NewDefaultPinger()
 	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	pingResult := make(chan error, 1)
 	go func() {
-		pingResult <- pinger.Run(fakeClientConn, 1)
+		pingResult <- pinger.Run(ctx, fakeClientConn, 1)
 	}()
-	defer pinger.Stop()
 
 	select {
 	case err := <-pingResult:
@@ -65,11 +67,12 @@ func TestDefaultPingerSuccess(t *testing.T) {
 	pinger := NewDefaultPinger()
 	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	pingResult := make(chan error, 1)
 	go func() {
-		pingResult <- pinger.Run(fakeClientConn, 3)
+		pingResult <- pinger.Run(ctx, fakeClientConn, 3)
 	}()
-	defer pinger.Stop()
 
 	go func() {
 		// keep reading from fakeServerConn and call PingResp() when a PINGREQ is received
@@ -99,11 +102,12 @@ func TestDefaultPingerPacketSent(t *testing.T) {
 	pinger := NewDefaultPinger()
 	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	pingResult := make(chan error, 1)
 	go func() {
-		pingResult <- pinger.Run(fakeClientConn, 3)
+		pingResult <- pinger.Run(ctx, fakeClientConn, 3)
 	}()
-	defer pinger.Stop()
 
 	// keep calling PacketSent() in a goroutine to check that the Pinger avoids sending PINGREQs when not needed
 	stop := make(chan struct{})
@@ -148,5 +152,79 @@ func TestDefaultPingerPacketSent(t *testing.T) {
 		t.Errorf("expected DefaultPinger to not return error, got %v", err)
 	case <-time.After(10 * time.Second):
 		// PASS
+	}
+}
+
+func TestDefaultPingerStartStop(t *testing.T) {
+	fakeServerConn, fakeClientConn := net.Pipe()
+
+	go func() {
+		// keep reading from fakeServerConn and throw away the data
+		buf := make([]byte, 1024)
+		for {
+			_, err := fakeServerConn.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
+	defer fakeServerConn.Close()
+
+	pinger := NewDefaultPinger()
+	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	pingResult := make(chan error, 1)
+	go func() {
+		pingResult <- pinger.Run(ctx, fakeClientConn, 1)
+	}()
+
+	time.Sleep(time.Millisecond) // Allow above go routine to start
+	ping2Result := make(chan error, 1)
+	go func() {
+		ping2Result <- pinger.Run(ctx, fakeClientConn, 1)
+	}()
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("Starting Run twice must fail immediately")
+	case err := <-ping2Result:
+		if err == nil {
+			t.Fatal("Starting Run twice must return an error")
+		}
+	}
+
+	select {
+	case <-pingResult:
+		t.Fatal("Ping should block until stopped or error")
+	default:
+	}
+	cancel()
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("Cancelling context must stop pinger")
+	case err := <-pingResult:
+		if err != nil {
+			t.Fatal("Cancelling context should result in nil error")
+		}
+	}
+
+	// Confirm we can now call Run() again
+	ctx, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+
+	go func() {
+		pingResult <- pinger.Run(ctx, fakeClientConn, 1)
+	}()
+	time.Sleep(time.Millisecond) // Allow above go routine to start
+	cancel2()
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("Cancelling context must stop pinger")
+	case err := <-pingResult:
+		if err != nil {
+			t.Fatal("Second call to Run should succeed (clean cancel should return nil error)")
+		}
 	}
 }

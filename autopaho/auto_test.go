@@ -176,10 +176,14 @@ func TestReconnect(t *testing.T) {
 		cancelFn func()        // Function to cancel test server context
 		done     chan struct{} // Will be closed when the test server has disconnected (and shutdown)
 	}
-	tsConnUpChan := make(chan tsConnUpMsg) // Message will be sent when test server connection is up
-	pahoConnUpChan := make(chan struct{})  // When autopaho reports connection is up write to channel will occur
+	tsConnUpChan := make(chan tsConnUpMsg, 1) // Message will be sent when test server connection is up (buffered so we can detect unexpected attempts)
+	pahoConnUpChan := make(chan struct{}, 1)  // When autopaho reports connection is up write to channel will occur
 
 	atCount := 0
+
+	// If we don't set the pinger, paho will recreate it each time; to confirm issue #277 does not reoccur we set it
+	pinger := paho.NewDefaultPinger()
+	pinger.SetDebug(paholog.NewTestLogger(t, "pinger:"))
 
 	config := ClientConfig{
 		ServerUrls:        []*url.URL{server},
@@ -205,7 +209,8 @@ func TestReconnect(t *testing.T) {
 		PahoDebug:      logger,
 		PahoErrors:     logger,
 		ClientConfig: paho.ClientConfig{
-			ClientID: "test",
+			ClientID:    "test",
+			PingHandler: pinger,
 		},
 	}
 
@@ -247,6 +252,13 @@ func TestReconnect(t *testing.T) {
 	case <-pahoConnUpChan:
 	case <-time.After(shortDelay):
 		t.Fatal("timeout awaiting reconnection up")
+	}
+
+	// Ensure connection is stable (ref issue #227 where pinger caused connection to drop)
+	select {
+	case <-tsConnUpChan:
+		t.Fatalf("connection should be stable after reconnection")
+	case <-time.After(shortDelay):
 	}
 
 	// Clean shutdown

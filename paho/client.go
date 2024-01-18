@@ -112,7 +112,6 @@ type (
 	}
 	// Client is the struct representing an MQTT client
 	Client struct {
-		mu     sync.Mutex
 		config ClientConfig
 
 		// OnPublishReceived copy of OnPublishReceived from ClientConfig (perhaps with added callback form Router)
@@ -120,10 +119,16 @@ type (
 		onPublishReceivedTracker []int // Used to track positions in above
 		onPublishReceivedMu      sync.Mutex
 
-		// authResponse is used for handling the MQTTv5 authentication exchange.
+		// authResponse is used for handling the MQTTv5 authentication exchange (MUST be buffered)
 		authResponse   chan<- packets.ControlPacket
-		stop           chan struct{}
-		done           chan struct{} // closed when shutdown complete (only valid after Connect returns nil error)
+		authResponseMu sync.Mutex // protects the above
+
+		cancelFunc func()
+
+		connectCalled   bool       // if true `Connect` has been called and a connection is being managed
+		connectCalledMu sync.Mutex // protects the above
+
+		done           <-chan struct{} // closed when shutdown complete (only valid after Connect returns nil error)
 		publishPackets chan *packets.Publish
 		acksTracker    acksTracker
 		workers        sync.WaitGroup
@@ -202,8 +207,8 @@ func NewClient(conf ClientConfig) *Client {
 	c.onPublishReceivedTracker = make([]int, len(c.onPublishReceived)) // Must have the same number of elements as onPublishReceived
 
 	if c.config.PingHandler == nil {
-		c.config.defaultPinger = true
 		c.config.PingHandler = NewDefaultPinger()
+		c.config.defaultPinger = true
 	}
 	if c.config.OnClientError == nil {
 		c.config.OnClientError = func(e error) {}
@@ -224,17 +229,30 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		return nil, fmt.Errorf("client connection is nil")
 	}
 
+	// The connection is in c.config.Conn which is inaccessible to the user.
+	// The end result of `Connect` (possibly some time after it returns) will be to close the connection so calling
+	// Connect twice is invalid.
+	c.connectCalledMu.Lock()
+	if c.connectCalled {
+		c.connectCalledMu.Unlock()
+		return nil, fmt.Errorf("connect must only be called once")
+	}
+	c.connectCalled = true
+	c.connectCalledMu.Unlock()
+
+	// The passed in ctx applies to the connection process only. clientCtx applies to Client (signals that the
+	// client should shut down).
+	clientCtx, cancelFunc := context.WithCancel(context.Background())
+	done := make(chan struct{})
 	cleanup := func() {
-		close(c.stop)
+		cancelFunc()
 		close(c.publishPackets)
 		_ = c.config.Conn.Close()
-		close(c.done)
-		c.mu.Unlock()
+		close(done)
 	}
 
-	c.mu.Lock()
-	c.stop = make(chan struct{})
-	c.done = make(chan struct{})
+	c.cancelFunc = cancelFunc
+	c.done = done
 
 	var publishPacketsSize uint16 = math.MaxUint16
 	if cp.Properties != nil && cp.Properties.ReceiveMaximum != nil {
@@ -314,8 +332,9 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		return ca, fmt.Errorf("session error: %w", err)
 	}
 
-	// no more possible calls to cleanup(), defer an unlock
-	defer c.mu.Unlock()
+	// the connection is now fully up and a nil error will be returned.
+	// cleanup() must not be called past this point and will be handled by `shutdown`
+	context.AfterFunc(clientCtx, func() { c.shutdown(done) })
 
 	if ca.Properties != nil {
 		if ca.Properties.ServerKeepAlive != nil {
@@ -347,7 +366,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	go func() {
 		defer c.workers.Done()
 		defer c.debug.Println("returning from ping handler worker")
-		if err := c.config.PingHandler.Run(c.config.Conn, keepalive); err != nil {
+		if err := c.config.PingHandler.Run(clientCtx, c.config.Conn, keepalive); err != nil {
 			go c.error(fmt.Errorf("ping handler error: %w", err))
 		}
 	}()
@@ -367,7 +386,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 	go func() {
 		defer c.workers.Done()
 		defer c.debug.Println("returning from incoming worker")
-		c.incoming()
+		c.incoming(clientCtx)
 	}()
 
 	if c.config.EnableManualAcknowledgment {
@@ -386,7 +405,7 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 			t := time.NewTicker(sendAcksInterval)
 			for {
 				select {
-				case <-c.stop:
+				case <-clientCtx.Done():
 					return
 				case <-t.C:
 					c.acksTracker.flush(func(pbs []*packets.Publish) {
@@ -426,6 +445,8 @@ func (c *Client) ack(pb *packets.Publish) {
 	c.config.Session.Ack(pb)
 }
 
+// routePublishPackets listens on c.publishPackets and passes received messages to the handlers
+// terminates when publishPackets closed
 func (c *Client) routePublishPackets() {
 	for pb := range c.publishPackets {
 		// Copy onPublishReceived so lock is only held briefly
@@ -468,13 +489,13 @@ func (c *Client) routePublishPackets() {
 // Disconnect, the Stop channel is closed or there is an error reading
 // a packet from the network connection
 // Closes `c.publishPackets` when done (should be the only thing sending on this channel)
-func (c *Client) incoming() {
+func (c *Client) incoming(ctx context.Context) {
 	defer c.debug.Println("client stopping, incoming stopping")
 	defer close(c.publishPackets)
 
 	for {
 		select {
-		case <-c.stop:
+		case <-ctx.Done():
 			return
 		default:
 			recv, err := packets.ReadPacket(c.config.Conn)
@@ -495,9 +516,14 @@ func (c *Client) incoming() {
 					if c.config.AuthHandler != nil {
 						go c.config.AuthHandler.Authenticated()
 					}
+					c.authResponseMu.Lock()
 					if c.authResponse != nil {
-						c.authResponse <- *recv
+						select { // authResponse must be buffered, and we should only receive 1 AUTH packet a time
+						case c.authResponse <- *recv:
+						default:
+						}
 					}
+					c.authResponseMu.Unlock()
 				case packets.AuthContinueAuthentication:
 					if c.config.AuthHandler != nil {
 						if _, err := c.config.AuthHandler.Authenticate(AuthFromPacketAuth(ap)).Packet().WriteTo(c.config.Conn); err != nil {
@@ -513,14 +539,10 @@ func (c *Client) incoming() {
 					c.config.Session.PacketReceived(recv, c.publishPackets)
 				} else {
 					c.debug.Printf("received QoS%d PUBLISH", pb.QoS)
-					c.mu.Lock()
 					select {
-					case <-c.stop:
-						c.mu.Unlock()
+					case <-ctx.Done():
 						return
-					default:
-						c.publishPackets <- pb
-						c.mu.Unlock()
+					case c.publishPackets <- pb:
 					}
 				}
 			case packets.PUBACK, packets.PUBCOMP, packets.SUBACK, packets.UNSUBACK, packets.PUBREC, packets.PUBREL:
@@ -528,9 +550,14 @@ func (c *Client) incoming() {
 			case packets.DISCONNECT:
 				pd := recv.Content.(*packets.Disconnect)
 				c.debug.Println("received DISCONNECT")
+				c.authResponseMu.Lock()
 				if c.authResponse != nil {
-					c.authResponse <- *recv
+					select { // authResponse must be buffered, and we should only receive 1 AUTH packet a time
+					case c.authResponse <- *recv:
+					default:
+					}
 				}
+				c.authResponseMu.Unlock()
 				c.config.Session.ConnectionLost(pd) // this may impact the session state
 				go func() {
 					if c.config.OnServerDisconnect != nil {
@@ -548,23 +575,17 @@ func (c *Client) incoming() {
 	}
 }
 
+// close terminates the connection and waits for a clean shutdown
+// may be called multiple times (subsequent calls will wait on previously requested shutdown)
 func (c *Client) close() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.cancelFunc() // cleanup handled by AfterFunc defined in Connect
+	<-c.done
+}
 
-	select {
-	case <-c.stop:
-		// already shutting down, return when shutdown complete
-		<-c.done
-		return
-	default:
-	}
-
-	close(c.stop)
-
-	c.debug.Println("client stopped")
-	c.config.PingHandler.Stop()
-	c.debug.Println("ping stopped")
+// shutdown cleanly shutdown the client
+// This should only be called via the AfterFunc in `Connect` (shutdown must not be called more than once)
+func (c *Client) shutdown(done chan<- struct{}) {
+	c.debug.Println("client stop requested")
 	_ = c.config.Conn.Close()
 	c.debug.Println("conn closed")
 	c.acksTracker.reset()
@@ -578,7 +599,7 @@ func (c *Client) close() {
 	c.debug.Println("session updated, waiting on workers")
 	c.workers.Wait()
 	c.debug.Println("workers done")
-	close(c.done)
+	close(done)
 }
 
 // error is called to signify that an error situation has occurred, this
@@ -605,17 +626,17 @@ func (c *Client) serverDisconnect(d *Disconnect) {
 func (c *Client) Authenticate(ctx context.Context, a *Auth) (*AuthResponse, error) {
 	c.debug.Println("client initiated reauthentication")
 	authResp := make(chan packets.ControlPacket, 1)
-	c.mu.Lock()
+	c.authResponseMu.Lock()
 	if c.authResponse != nil {
-		c.mu.Unlock()
+		c.authResponseMu.Unlock()
 		return nil, fmt.Errorf("previous authentication is still in progress")
 	}
 	c.authResponse = authResp
-	c.mu.Unlock()
+	c.authResponseMu.Unlock()
 	defer func() {
-		c.mu.Lock()
+		c.authResponseMu.Lock()
 		c.authResponse = nil
-		c.mu.Unlock()
+		c.authResponseMu.Unlock()
 	}()
 
 	c.debug.Println("sending AUTH")
@@ -1024,6 +1045,9 @@ func (c *Client) SetDebugLogger(l log.Logger) {
 	c.debug = l
 	if c.config.autoCloseSession { // If we created the session store then it should use the same logger
 		c.config.Session.SetDebugLogger(l)
+	}
+	if c.config.defaultPinger { // Debug logger is set after the client is created so need to copy it to pinger
+		c.config.PingHandler.SetDebug(c.debug)
 	}
 }
 

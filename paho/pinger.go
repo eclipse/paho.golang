@@ -16,6 +16,7 @@
 package paho
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -26,53 +27,44 @@ import (
 )
 
 type Pinger interface {
-	// Run() starts the pinger. It blocks until the pinger is stopped.
+	// Run starts the pinger. It blocks until the pinger is stopped.
 	// If the pinger stops due to an error, it returns the error.
 	// If the keepAlive is 0, it returns nil immediately.
-	// Run() must be called only once.
-	Run(conn net.Conn, keepAlive uint16) error
+	// Run() may be called multiple times, but only after prior instances have terminated.
+	Run(ctx context.Context, conn net.Conn, keepAlive uint16) error
 
-	// Stop() gracefully stops the pinger.
-	Stop()
-
-	// PacketSent() is called when a packet is sent to the server.
+	// PacketSent is called when a packet is sent to the server.
 	PacketSent()
 
-	// PingResp() is called when a PINGRESP is received from the server.
+	// PingResp is called when a PINGRESP is received from the server.
 	PingResp()
 
-	// SetDebug() sets the logger for debugging.
+	// SetDebug sets the logger for debugging.
 	// It is not thread-safe and must be called before Run() to avoid race conditions.
 	SetDebug(log.Logger)
 }
 
 // DefaultPinger is the default implementation of Pinger.
 type DefaultPinger struct {
-	timer             *time.Timer
-	keepAlive         uint16
-	conn              net.Conn
-	previousPingAcked chan struct{}
-	done              chan struct{}
-	errChan           chan error
-	ackReceived       chan struct{}
-	stopOnce          sync.Once
-	mu                sync.Mutex
-	debug             log.Logger
+	lastPacketSent   time.Time
+	lastPingResponse time.Time
+
+	debug log.Logger
+
+	running bool // Used to prevent concurrent calls to Run
+
+	mu sync.Mutex // Protects all of the above
 }
 
+// NewDefaultPinger creates a DefaultPinger
 func NewDefaultPinger() *DefaultPinger {
-	previousPingAcked := make(chan struct{}, 1)
-	previousPingAcked <- struct{}{} // initial value
 	return &DefaultPinger{
-		previousPingAcked: previousPingAcked,
-		errChan:           make(chan error, 1),
-		done:              make(chan struct{}),
-		ackReceived:       make(chan struct{}, 1),
-		debug:             log.NOOPLogger{},
+		debug: log.NOOPLogger{},
 	}
 }
 
-func (p *DefaultPinger) Run(conn net.Conn, keepAlive uint16) error {
+// Run starts the pinger; blocks until done (either context cancelled or error encountered)
+func (p *DefaultPinger) Run(ctx context.Context, conn net.Conn, keepAlive uint16) error {
 	if keepAlive == 0 {
 		p.debug.Println("Run() returning immediately due to keepAlive == 0")
 		return nil
@@ -81,106 +73,67 @@ func (p *DefaultPinger) Run(conn net.Conn, keepAlive uint16) error {
 		return fmt.Errorf("conn is nil")
 	}
 	p.mu.Lock()
-	if p.timer != nil {
+	if p.running {
 		p.mu.Unlock()
-		return fmt.Errorf("Run() already called")
+		return fmt.Errorf("Run() already in progress")
 	}
-	select {
-	case <-p.done:
-		p.mu.Unlock()
-		return fmt.Errorf("Run() called after stop()")
-	default:
-	}
-	p.keepAlive = keepAlive
-	p.conn = conn
-	p.timer = time.AfterFunc(0, p.sendPingreq) // Immediately send first pingreq
+	p.running = true
 	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		p.running = false
+		p.mu.Unlock()
+	}()
 
-	return <-p.errChan
-}
+	interval := time.Duration(keepAlive) * time.Second
+	timer := time.NewTimer(0) // Immediately send first pingreq
+	var lastPingSent time.Time
+	for {
+		select {
+		case <-ctx.Done():
+			timer.Stop() // We don't care if the timer has fired
+			return nil
+		case t := <-timer.C:
+			p.mu.Lock()
+			lastPingResponse := p.lastPingResponse
+			pingDue := p.lastPacketSent.Add(interval)
+			p.mu.Unlock()
 
-func (p *DefaultPinger) Stop() {
-	p.stop(nil)
+			if !lastPingSent.IsZero() && lastPingSent.After(lastPingResponse) {
+				p.debug.Printf("DefaultPinger PINGRESP timeout")
+				return fmt.Errorf("PINGRESP timed out")
+			}
+
+			if t.Before(pingDue) {
+				// A Control Packet has been sent since we last checked, meaning the ping can be delayed
+				timer.Reset(pingDue.Sub(t))
+				continue
+			}
+
+			if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(conn); err != nil {
+				p.debug.Printf("DefaultPinger packet write error: %v", err)
+				return fmt.Errorf("failed to send PINGREQ: %w", err)
+			}
+			lastPingSent = time.Now()
+			timer.Reset(interval)
+		}
+	}
 }
 
 func (p *DefaultPinger) PacketSent() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.timer == nil {
-		p.debug.Println("PacketSent() called before Run()")
-		return
-	}
-	select {
-	case <-p.done:
-		p.debug.Println("PacketSent() returning due to done channel")
-		return
-	default:
-	}
-
-	p.debug.Println("PacketSent() resetting timer")
-	p.timer.Reset(time.Duration(p.keepAlive) * time.Second)
+	p.lastPacketSent = time.Now()
 }
 
 func (p *DefaultPinger) PingResp() {
-	select {
-	case p.ackReceived <- struct{}{}:
-	default:
-		p.debug.Println("PingResp() called when ackReceived channel is full")
-		p.stop(fmt.Errorf("received unexpected PINGRESP"))
-	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.lastPingResponse = time.Now()
 }
 
 func (p *DefaultPinger) SetDebug(debug log.Logger) {
-	p.debug = debug
-}
-
-func (p *DefaultPinger) sendPingreq() {
-	// Wait for previous ping to be acked before sending another
-	select {
-	case <-p.previousPingAcked:
-	case <-p.done:
-		p.debug.Println("sendPingreq() returning before sending PINGREQ due to done channel")
-		return
-	}
-
-	p.debug.Println("sendPingreq() sending PINGREQ packet")
-	if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(p.conn); err != nil {
-		p.stop(fmt.Errorf("failed to send PINGREQ: %w", err))
-		p.debug.Printf("sendPingreq() calling stop() and returning due to packet write error: %v", err)
-		return
-	}
-	p.debug.Println("sendPingreq() sent PINGREQ packet, waiting for PINGRESP")
-	pingrespTimeout := time.NewTimer(time.Duration(p.keepAlive) * time.Second)
-
-	p.PacketSent()
-
-	select {
-	case <-p.done:
-		p.debug.Println("sendPingreq() returning after sending PINGREQ due to done channel")
-	case <-p.ackReceived:
-		p.previousPingAcked <- struct{}{}
-		p.debug.Println("sendPingreq() returning after receiving PINGRESP")
-	case <-pingrespTimeout.C:
-		p.debug.Println("sendPingreq() calling stop() and returning due to PINGRESP timeout")
-		p.stop(fmt.Errorf("PINGRESP timed out"))
-		return
-	}
-
-	// Stop the timer if it hasn't fired yet
-	if !pingrespTimeout.Stop() {
-		<-pingrespTimeout.C
-	}
-}
-
-func (p *DefaultPinger) stop(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.debug.Printf("stop() called with error: %v", err)
-	p.stopOnce.Do(func() {
-		if p.timer != nil {
-			p.timer.Stop()
-		}
-		p.errChan <- err
-		close(p.done)
-	})
+	p.debug = debug
 }
