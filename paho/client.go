@@ -882,7 +882,7 @@ func (c *Client) PublishWithOptions(ctx context.Context, p *Publish, o PublishOp
 		return c.publishQoS12(ctx, pb, o)
 	}
 
-	return nil, fmt.Errorf("QoS isn't 0, 1 or 2")
+	return nil, fmt.Errorf("%w: QoS isn't 0, 1 or 2", ErrInvalidArguments)
 }
 
 func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish, o PublishOptions) (*PublishResponse, error) {
