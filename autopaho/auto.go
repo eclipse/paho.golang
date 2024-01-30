@@ -554,10 +554,20 @@ connectionLoop:
 				if errors.Is(err, queue.ErrEmpty) {
 					c.debug.Println("everything in queue transmitted")
 					continue queueLoop
+				} else if err != nil {
+					// if Peek() keeps returning errors, we will loop forever.
+					// see https://github.com/eclipse/paho.golang/issues/234
+					c.errors.Printf("error retrieving queue entry: %s", err)
+					time.Sleep(1 * time.Second)
+					continue
 				}
 				r, err := entry.Reader()
 				if err != nil {
 					c.errors.Printf("error retrieving reader for queue entry: %s", err)
+					if err := entry.Leave(); err != nil {
+						c.errors.Printf("error leaving queue entry: %s", err)
+					}
+					time.Sleep(1 * time.Second)
 					continue
 				}
 
@@ -607,6 +617,7 @@ connectionLoop:
 						if err := entry.Leave(); err != nil { // the message was not sent, so leave it in the queue
 							c.errors.Printf("error leaving queue entry: %s", err)
 						}
+						time.Sleep(1 * time.Second)
 					}
 
 					// The error might be fatal (connection will drop) or could be temporary (i.e. PacketTimeout exceeded)
