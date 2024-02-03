@@ -5,9 +5,29 @@ This repository contains the source code for the [Eclipse Paho](http://eclipse.o
 
 **Warning breaking change** - Release 0.12 contains a breaking change; see the [release notes](https://github.com/eclipse/paho.golang/releases/tag/v0.12.0). 
 
-Following the release of v0.12, major changes have been introduced to the library ([full QOS1/2 support](https://github.com/eclipse/paho.golang/issues/25)). 
-Due to the extent of these changes, it's likely that some users will encounter breaking changes and bugs may have been introduced (managing the session state is quite complex!). 
-Please assist us in testing @master (and post your experiences to [this issue](https://github.com/eclipse/paho.golang/issues/207)); the change should enable more people to migrate from the v3 client and gets us a lot closer to V1.0! (see notes at the end of this readme).
+Release [v0.20](https://github.com/eclipse/paho.golang/releases/tag/v0.20.0) includes major changes (some breaking), 
+much of this is due to the introduction of [full QOS1/2 support](https://github.com/eclipse/paho.golang/issues/25).
+We do expect that most code will run as-is, or with minor changes; known breaking changes are noted below (but due to 
+the extensive changes between releases 0.12 and 0.20 this list is probably incomplete):
+
+* `paho` 
+  * `paho.Publish` when publishing at QOS1/2 the packet identifier (if acquired) was released if the context expired
+      regardless of whether the message had been sent (potentially leading to reuse of the ID and in breach of the spec).
+      This has been changed such that once transmitted, the message will be acknowledged regardless of the publish context
+      (but the Publish function will only block until the context expires). The Errors returned now better indicate what
+      occurred.
+  * router - this should work as-is for most users in v0.20, however `ClientConfig.Router` will be removed in a future
+    release. Please replace `ClientConfig.Router` with `ClientConfig.OnPublishReceived` (which is more flexible; note that
+    you can still use `StandardRouter` - see `autopaho/examples/router`).
+  * `ClientConfig` is now private (accessing this led to race conditions).
+  * `Pinger` interface has changed (and `DefaultPinger` has been rewritten).
+  * `ClientOptions.MIDs` has been removed.
+* `autopaho`
+   * `autopaho` CleanSession flag. Previously `CleanSession` was hardcoded to `true`; this is no longer the case and
+  the default is `false`. Whilst his is potentially a breaking change, `SessionExpiryInterval` will default to 0 meaning
+  the session will be removed when the connection drops. As a result this change should have no impact on most users; it
+  may be a problem if another application has connected with `SessionExpiryInterval>0` meaning a session exists.
+
 
 There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project, and its API is very different to this one).
 
@@ -114,25 +134,7 @@ QOS1/QOS2 Implementation
 The major feature missing from this library, as at release 0.12, was support for [session persistence](https://github.com/eclipse/paho.golang/issues/25); 
 the library effectively operated at QOS0 (QOS1/2 appeared to work, but the delivery guarantees were not honored).
 
-This has now been rectified (in @master); a major change (which, despite testing, is likely to introduce issues!). 
-
-There are still a few TODOs in the code; these flag areas that may require further work (releasing this before 
-resolving them all because this is a huge change already).
-
-Please assist us in testing this new code, we are aiming for a release before the end of the year.
-
-## Breaking changes:
-
-* `paho` `ClientOptions.MIDs` has been removed. While it was possible to implement your own MIDService, I suspect that
-  no one has done so.
-* `paho.Publish` when publishing at QOS1/2 the packet identifier (if acquired) was released if the context expired
-  regardless of whether the message had been sent (potentially leading to reuse of the ID and in breach of the spec). 
-  This has been changed such that once transmitted, the message will be acknowledged regardless of the publish context
-  (but the Publish function will only block until the context expires). The Errors returned now better indicate what occurred.
-* `autopaho` CleanSession flag. Previously the CleanSession was hardcoded to `true`; this is no longer the case and
-  the default is `false`. Whilst his is potentially a breaking change, `SessionExpiryInterval` will default to 0 meaning
-  the session will be removed when the connection drops. As a result this change should have no impact on most users; it
-  may be a problem if another application has connected with `SessionExpiryInterval>0` meaning a session exists.
+This has now been rectified (as of v0.20); a major change (which, despite testing, is likely to introduce issues!). 
 
 ## Known Issues
 
