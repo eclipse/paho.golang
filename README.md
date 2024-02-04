@@ -27,6 +27,7 @@ the extensive changes between releases 0.12 and 0.20 this list is probably incom
   the default is `false`. Whilst his is potentially a breaking change, `SessionExpiryInterval` will default to 0 meaning
   the session will be removed when the connection drops. As a result this change should have no impact on most users; it
   may be a problem if another application has connected with `SessionExpiryInterval>0` meaning a session exists.
+   * `ConnectPacketBuilder` arguments have changed to `func(*paho.Connect, *url.URL) *paho.Connect`.
 
 
 There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) available (note that this is an older project, and its API is very different to this one).
@@ -34,7 +35,7 @@ There is also a [v3 client](https://github.com/eclipse/paho.mqtt.golang) availab
 Quick Start
 -----------
 
-We recommend that new users begin with `[autopaho](https://github.com/eclipse/paho.golang/tree/master/autopaho)`; this
+We recommend that new users begin with [`autopaho`](https://github.com/eclipse/paho.golang/tree/master/autopaho); this
 provides a simple client that should be sufficient for most use-cases.
 
 Folder Structure
