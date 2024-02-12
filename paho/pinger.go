@@ -110,11 +110,11 @@ func (p *DefaultPinger) Run(ctx context.Context, conn net.Conn, keepAlive uint16
 				continue
 			}
 
+			lastPingSent = time.Now() // set before sending because WriteTo may return after PINGRESP is handled
 			if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(conn); err != nil {
 				p.debug.Printf("DefaultPinger packet write error: %v", err)
 				return fmt.Errorf("failed to send PINGREQ: %w", err)
 			}
-			lastPingSent = time.Now()
 			timer.Reset(interval)
 		}
 	}
