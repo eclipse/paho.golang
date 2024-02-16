@@ -300,11 +300,6 @@ func (i *Properties) Pack(p byte) []byte {
 			writeUint16(*i.TopicAliasMaximum, &b)
 		}
 
-		if i.MaximumQOS != nil {
-			b.WriteByte(PropMaximumQOS)
-			b.WriteByte(*i.MaximumQOS)
-		}
-
 		if i.MaximumPacketSize != nil {
 			b.WriteByte(PropMaximumPacketSize)
 			writeUint32(*i.MaximumPacketSize, &b)
@@ -312,6 +307,11 @@ func (i *Properties) Pack(p byte) []byte {
 	}
 
 	if p == CONNACK {
+		if i.MaximumQOS != nil {
+			b.WriteByte(PropMaximumQOS)
+			b.WriteByte(*i.MaximumQOS)
+		}
+
 		if i.AssignedClientID != "" {
 			b.WriteByte(PropAssignedClientID)
 			writeString(i.AssignedClientID, &b)
@@ -468,11 +468,6 @@ func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 			writeUint16(*i.TopicAliasMaximum, &b)
 		}
 
-		if i.MaximumQOS != nil {
-			b.WriteByte(PropMaximumQOS)
-			b.WriteByte(*i.MaximumQOS)
-		}
-
 		if i.MaximumPacketSize != nil {
 			b.WriteByte(PropMaximumPacketSize)
 			writeUint32(*i.MaximumPacketSize, &b)
@@ -480,6 +475,11 @@ func (i *Properties) PackBuf(p byte) *bytes.Buffer {
 	}
 
 	if p == CONNACK {
+		if i.MaximumQOS != nil {
+			b.WriteByte(PropMaximumQOS)
+			b.WriteByte(*i.MaximumQOS)
+		}
+
 		if i.AssignedClientID != "" {
 			b.WriteByte(PropAssignedClientID)
 			writeString(i.AssignedClientID, &b)
@@ -807,7 +807,7 @@ var ValidProperties = map[byte]map[byte]struct{}{
 	PropReasonString:           {CONNACK: {}, PUBACK: {}, PUBREC: {}, PUBREL: {}, PUBCOMP: {}, SUBACK: {}, UNSUBACK: {}, DISCONNECT: {}, AUTH: {}},
 	PropReceiveMaximum:         {CONNECT: {}, CONNACK: {}},
 	PropTopicAliasMaximum:      {CONNECT: {}, CONNACK: {}},
-	PropMaximumQOS:             {CONNECT: {}, CONNACK: {}},
+	PropMaximumQOS:             {CONNACK: {}},
 	PropMaximumPacketSize:      {CONNECT: {}, CONNACK: {}},
 	PropUser:                   {CONNECT: {}, CONNACK: {}, PUBLISH: {}, PUBACK: {}, PUBREC: {}, PUBREL: {}, PUBCOMP: {}, SUBSCRIBE: {}, UNSUBSCRIBE: {}, SUBACK: {}, UNSUBACK: {}, DISCONNECT: {}, AUTH: {}},
 }

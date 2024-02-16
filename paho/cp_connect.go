@@ -41,7 +41,6 @@ type (
 		WillDelayInterval     *uint32
 		ReceiveMaximum        *uint16
 		TopicAliasMaximum     *uint16
-		MaximumQOS            *byte
 		MaximumPacketSize     *uint32
 		User                  UserProperties
 		RequestProblemInfo    bool
@@ -62,7 +61,6 @@ func (c *Connect) InitProperties(p *packets.Properties) {
 		RequestProblemInfo:    true,
 		ReceiveMaximum:        p.ReceiveMaximum,
 		TopicAliasMaximum:     p.TopicAliasMaximum,
-		MaximumQOS:            p.MaximumQOS,
 		MaximumPacketSize:     p.MaximumPacketSize,
 		User:                  UserPropertiesFromPacketUser(p.User),
 	}
@@ -137,7 +135,6 @@ func (c *Connect) Packet() *packets.Connect {
 			WillDelayInterval:     c.Properties.WillDelayInterval,
 			ReceiveMaximum:        c.Properties.ReceiveMaximum,
 			TopicAliasMaximum:     c.Properties.TopicAliasMaximum,
-			MaximumQOS:            c.Properties.MaximumQOS,
 			MaximumPacketSize:     c.Properties.MaximumPacketSize,
 			User:                  c.Properties.User.ToPacketProperties(),
 		}
