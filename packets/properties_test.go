@@ -129,10 +129,6 @@ func TestPropertiess(t *testing.T) {
 		t.Fatalf("'topicAlias' is valid for 'PUBLISH' packets")
 	}
 
-	if !ValidateID(CONNECT, PropMaximumQOS) {
-		t.Fatalf("'maximumQOS' is valid for 'CONNECT' packets")
-	}
-
 	if !ValidateID(CONNACK, PropMaximumQOS) {
 		t.Fatalf("'maximumQOS' is valid for 'CONNACK' packets")
 	}

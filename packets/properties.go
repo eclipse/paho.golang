@@ -807,7 +807,7 @@ var ValidProperties = map[byte]map[byte]struct{}{
 	PropReasonString:           {CONNACK: {}, PUBACK: {}, PUBREC: {}, PUBREL: {}, PUBCOMP: {}, SUBACK: {}, UNSUBACK: {}, DISCONNECT: {}, AUTH: {}},
 	PropReceiveMaximum:         {CONNECT: {}, CONNACK: {}},
 	PropTopicAliasMaximum:      {CONNECT: {}, CONNACK: {}},
-	PropMaximumQOS:             {CONNECT: {}, CONNACK: {}},
+	PropMaximumQOS:             {CONNACK: {}},
 	PropMaximumPacketSize:      {CONNECT: {}, CONNACK: {}},
 	PropUser:                   {CONNECT: {}, CONNACK: {}, PUBLISH: {}, PUBACK: {}, PUBREC: {}, PUBREL: {}, PUBCOMP: {}, SUBSCRIBE: {}, UNSUBSCRIBE: {}, SUBACK: {}, UNSUBACK: {}, DISCONNECT: {}, AUTH: {}},
 }
