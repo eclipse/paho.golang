@@ -266,9 +266,6 @@ func (c *Client) Connect(ctx context.Context, cp *Connect) (*Connack, error) {
 		if cp.Properties.MaximumPacketSize != nil {
 			c.clientProps.MaximumPacketSize = *cp.Properties.MaximumPacketSize
 		}
-		if cp.Properties.MaximumQOS != nil {
-			c.clientProps.MaximumQoS = *cp.Properties.MaximumQOS
-		}
 		if cp.Properties.ReceiveMaximum != nil {
 			c.clientProps.ReceiveMaximum = *cp.Properties.ReceiveMaximum
 		}
