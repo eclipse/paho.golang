@@ -120,8 +120,9 @@ func attemptTCPConnection(ctx context.Context, address string) (net.Conn, error)
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", address)
 	}
-	proxyDialer := proxy.FromEnvironment()
-	return proxyDialer.Dial("tcp", address)
+	// Note: if custom dialer does not implement proxy.ContextDialer, a new goroutine is blocked ("leaked")
+	//until the provided implementation of Dial() times out
+	return proxy.Dial(ctx, "tcp", address)
 }
 
 // attemptTLSConnection - makes a single attempt at establishing a TLS connection with the server
@@ -135,8 +136,9 @@ func attemptTLSConnection(ctx context.Context, tlsCfg *tls.Config, address strin
 		return packets.NewThreadSafeConn(conn), err
 	}
 
-	proxyDialer := proxy.FromEnvironment()
-	conn, err := proxyDialer.Dial("tcp", address)
+	// Note: if custom dialer does not implement proxy.ContextDialer, a new goroutine is blocked ("leaked")
+	//until the provided implementation of Dial() times out
+	conn, err := proxy.Dial(ctx, "tcp", address)
 	if err != nil {
 		return nil, err
 	}
