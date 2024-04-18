@@ -74,10 +74,10 @@ func TestDisconnectAfterOutgoingPublish(t *testing.T) {
 	defer session.Close()
 	connectCount := 0
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:               []*url.URL{server},
+		KeepAlive:                60,
+		ReconnectBackoffStrategy: NewConstantBackoffStrategy(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:           shortDelay,                                   // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			ctx, cancel := context.WithCancel(ctx) // Note: go vet warning is invalid
 			conn, done, err := ts.Connect(ctx)
@@ -240,10 +240,10 @@ func TestQueueResume(t *testing.T) {
 	defer session.Close()
 	connectCount := 0
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:               []*url.URL{server},
+		KeepAlive:                60,
+		ReconnectBackoffStrategy: NewConstantBackoffStrategy(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:           shortDelay,                                   // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			ctx, cancel := context.WithCancel(ctx) // Note: go vet warning is invalid
 			conn, done, err := ts.Connect(ctx)
