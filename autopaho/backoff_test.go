@@ -53,3 +53,68 @@ func TestConstantBackoffStrategyRandomValue(t *testing.T) {
 		}
 	}
 }
+
+// tests for the exponential backoff strategy implementation
+
+func TestRandomExponentialBackoff(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		doSetupAndTestRandomExponentialBackoff(t)
+	}
+}
+
+func doSetupAndTestRandomExponentialBackoff(t *testing.T) {
+	minDelayInMillisLowerBound := int64(500)                           // 500ms
+	minDelayInMillisUpperBound := minDelayInMillisLowerBound + 5*1_000 // +5s
+	minDelayInMillis := randRange(
+		minDelayInMillisLowerBound,
+		minDelayInMillisUpperBound,
+	)
+
+	minDelay := time.Duration(minDelayInMillis) * time.Millisecond
+
+	// set up a partially random initial max backoff time
+	initialMaxDelayInMillisLowerBound := minDelayInMillis + 500                       // +500ms
+	initialMaxDelayInMillisUpperBound := initialMaxDelayInMillisLowerBound + 30*1_000 // +30s
+	initialMaxDelayInMillis := randRange(
+		initialMaxDelayInMillisLowerBound,
+		initialMaxDelayInMillisUpperBound,
+	)
+
+	initialMaxDelay := time.Duration(initialMaxDelayInMillis) * time.Millisecond
+
+	// set up a partially random max backoff time
+	maxDelayMillisLowerBound := minDelayInMillis + 30*60*1_000           // +30min
+	maxDelayInMillisUpperBound := maxDelayMillisLowerBound + 60*60*1_000 // +60min
+	maxDelayInMillis := randRange(
+		maxDelayMillisLowerBound,
+		maxDelayInMillisUpperBound,
+	)
+
+	maxDelay := time.Duration(maxDelayInMillis) * time.Millisecond
+
+	// set up factor for the next variation
+	const factor = 1.6
+
+	exponentialBackoffStrategy := NewExponentialBackoffStrategy(
+		minDelay,
+		maxDelay,
+		initialMaxDelay,
+		factor,
+	)
+
+	exponentialBackoff := exponentialBackoffStrategy.Backoff()
+
+	// create many backoffs and test they are within constraints
+	for i := 0; i < 50; i++ {
+		actual := exponentialBackoff.Next()
+		if i == 0 && initialMaxDelay < actual {
+			t.Fatalf("Actual backoff value: `%s` was higher than configured initial maximum: `%s`", actual, initialMaxDelay)
+		}
+		if actual < minDelay {
+			t.Fatalf("Actual backoff value: `%s` was less than configured minimum: `%s`", actual, minDelay)
+		}
+		if maxDelay < actual {
+			t.Fatalf("Actual backoff value: `%s` was higher than configured maximum: `%s`", actual, maxDelay)
+		}
+	}
+}
