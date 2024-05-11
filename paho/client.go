@@ -874,7 +874,7 @@ func (c *Client) PublishWithOptions(ctx context.Context, p *Publish, o PublishOp
 			return nil, err
 		}
 		c.config.PingHandler.PacketSent()
-		return nil, nil
+		return &PublishResponse{}, nil
 	case 1, 2:
 		return c.publishQoS12(ctx, pb, o)
 	}
