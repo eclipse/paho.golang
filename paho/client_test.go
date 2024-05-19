@@ -224,8 +224,9 @@ func TestClientPublishQoS0(t *testing.T) {
 		Payload: []byte("test payload"),
 	}
 
-	_, err := c.Publish(context.Background(), p)
+	pr, err := c.Publish(context.Background(), p)
 	require.Nil(t, err)
+	require.NotNil(t, pr)
 
 	time.Sleep(10 * time.Millisecond)
 }
