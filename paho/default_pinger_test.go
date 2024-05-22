@@ -232,6 +232,7 @@ func TestDefaultPingerStartStop(t *testing.T) {
 
 // In case of slow and unstable network connection, the WriteTo operation may block for longer than KeepAlive interval
 func TestDefaultPingerBlockingWriteTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t)
 	fakeServerConn, fakeClientConn := net.Pipe()
 	// intentionally do not read from fakeServerConn to simulate a blocking write operation
 	defer fakeServerConn.Close()
