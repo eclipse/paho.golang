@@ -121,14 +121,11 @@ func (p *DefaultPinger) Run(ctx context.Context, conn net.Conn, keepAlive uint16
 				if _, err := packets.NewControlPacket(packets.PINGREQ).WriteTo(conn); err != nil {
 					p.debug.Printf("DefaultPinger packet write error: %v", err)
 					errCh <- fmt.Errorf("failed to send PINGREQ: %w", err)
-					return
 				}
 			}()
 			timer.Reset(interval)
 		case err := <-errCh:
-			if err != nil {
-				return err
-			}
+			return err
 		}
 	}
 }
