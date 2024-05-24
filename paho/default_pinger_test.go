@@ -25,6 +25,7 @@ import (
 	paholog "github.com/eclipse/paho.golang/paho/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestDefaultPingerTimeout(t *testing.T) {
@@ -226,5 +227,54 @@ func TestDefaultPingerStartStop(t *testing.T) {
 		if err != nil {
 			t.Fatal("Second call to Run should succeed (clean cancel should return nil error)")
 		}
+	}
+}
+
+// In case of slow and unstable network connection, the WriteTo operation may block for longer than KeepAlive interval
+func TestDefaultPingerBlockingWriteTimeout(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	fakeServerConn, fakeClientConn := net.Pipe()
+	// intentionally do not read from fakeServerConn to simulate a blocking write operation
+	defer fakeServerConn.Close()
+
+	pinger := NewDefaultPinger()
+	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pingResult := make(chan error, 1)
+	go func() {
+		pingResult <- pinger.Run(ctx, fakeClientConn, 1)
+	}()
+
+	select {
+	case err := <-pingResult:
+		require.NotNil(t, err)
+		assert.EqualError(t, err, "PINGRESP timed out")
+	case <-time.After(10 * time.Second):
+		t.Error("expected DefaultPinger to detect timeout and return error")
+	}
+}
+
+func TestDefaultPingerContextCancelled(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	fakeServerConn, fakeClientConn := net.Pipe()
+	defer fakeServerConn.Close()
+
+	pinger := NewDefaultPinger()
+	pinger.SetDebug(paholog.NewTestLogger(t, "DefaultPinger:"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	pingResult := make(chan error, 1)
+	go func() {
+		pingResult <- pinger.Run(ctx, fakeClientConn, 60)
+	}()
+
+	select {
+	case err := <-pingResult:
+		require.Nil(t, err)
+	case <-time.After(10 * time.Second):
+		t.Error("expected DefaultPinger to exit when context is cancelled")
 	}
 }
