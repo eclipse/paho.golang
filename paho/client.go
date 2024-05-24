@@ -815,7 +815,7 @@ func (c *Client) Unsubscribe(ctx context.Context, u *Unsubscribe) (*Unsuback, er
 
 // Publish is used to send a publication to the MQTT server.
 // It is passed a pre-prepared Publish packet and blocks waiting for the appropriate response, or for the timeout to fire.
-// Any response message is returned from the function, along with any errors.
+// A PublishResponse is returned, which is relevant for QOS1+. For QOS0, a default success response is returned.
 // Note that a message may still be delivered even if Publish times out (once the message is part of the session state,
 // it may even be delivered following an application restart).
 // Warning: Publish may outlive the connection when QOS1+ (managed in `session_state`)
@@ -838,7 +838,7 @@ type PublishOptions struct {
 
 // PublishWithOptions is used to send a publication to the MQTT server (with options to customise its behaviour)
 // It is passed a pre-prepared Publish packet and, by default, blocks waiting for the appropriate response, or for the
-// timeout to fire.
+// timeout to fire. A PublishResponse is returned, which is relevant for QOS1+. For QOS0, a default success response is returned.
 // Note that a message may still be delivered even if Publish times out (once the message is part of the session state,
 // it may even be delivered following an application restart).
 // Warning: Publish may outlive the connection when QOS1+ (managed in `session_state`)
