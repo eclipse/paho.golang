@@ -44,6 +44,7 @@ func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConne
 	// Note: We do not touch b.cli in order to avoid adding thread safety issues.
 	var err error
 
+	backoff := cfg.ReconnectBackoffStrategy.Backoff()
 	for {
 		for _, u := range cfg.ServerUrls {
 			connectionCtx, cancelConnCtx := context.WithTimeout(ctx, cfg.ConnectTimeout)
@@ -106,7 +107,7 @@ func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConne
 
 		// Delay before attempting another connection
 		select {
-		case <-time.After(cfg.ConnectRetryDelay):
+		case <-time.After(backoff.Next()):
 		case <-ctx.Done():
 			return nil, nil
 		}
