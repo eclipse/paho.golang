@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/stretchr/testify v1.8.4
 	go.uber.org/goleak v1.2.1
-	golang.org/x/net v0.21.0
+	golang.org/x/net v0.23.0
 )
 
 require (
