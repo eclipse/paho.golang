@@ -70,9 +70,11 @@ type ClientConfig struct {
 	CleanStartOnInitialConnection bool        //  Clean Start flag, if true, existing session information will be cleared on the first connection (it will be false for subsequent connections)
 	SessionExpiryInterval         uint32      // Session Expiry Interval in seconds (if 0 the Session ends when the Network Connection is closed)
 
-	ConnectRetryDelay time.Duration    // How long to wait between connection attempts (defaults to 10s)
-	ConnectTimeout    time.Duration    // How long to wait for the connection process to complete (defaults to 10s)
-	WebSocketCfg      *WebSocketConfig // Enables customisation of the websocket connection
+	// Deprecated: ConnectRetryDelay is deprecated and its functionality is replaced by ReconnectBackoffStrategy.
+	ConnectRetryDelay        time.Duration    // How long to wait between connection attempts (defaults to 10s)
+	ReconnectBackoffStrategy BackoffStrategy  // How long to wait between connection attempts (defaults to 10s)
+	ConnectTimeout           time.Duration    // How long to wait for the connection process to complete (defaults to 10s)
+	WebSocketCfg             *WebSocketConfig // Enables customisation of the websocket connection
 
 	Queue queue.Queue // Used to queue up publish messages (if nil an error will be returned if publish could not be transmitted)
 
@@ -242,8 +244,15 @@ func NewConnection(ctx context.Context, cfg ClientConfig) (*ConnectionManager, e
 	if cfg.Errors == nil {
 		cfg.Errors = log.NOOPLogger{}
 	}
-	if cfg.ConnectRetryDelay == 0 {
-		cfg.ConnectRetryDelay = 10 * time.Second
+	if cfg.ReconnectBackoffStrategy == nil {
+		// for backwards compatibility we check for ConnectRetryDelay first
+		// before using the default constant backoff strategy (which behaves
+		// identically to the previous behaviour)
+		if cfg.ConnectRetryDelay == 0 {
+			cfg.ReconnectBackoffStrategy = NewConstantBackoffStrategy(10 * time.Second)
+		} else {
+			cfg.ReconnectBackoffStrategy = NewConstantBackoffStrategy(cfg.ConnectRetryDelay)
+		}
 	}
 	if cfg.ConnectTimeout == 0 {
 		cfg.ConnectTimeout = 10 * time.Second

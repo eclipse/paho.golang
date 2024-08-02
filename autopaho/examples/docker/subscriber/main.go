@@ -62,7 +62,7 @@ func main() {
 		KeepAlive:                     cfg.keepAlive,
 		CleanStartOnInitialConnection: false, // the default
 		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
-		ConnectRetryDelay:             cfg.connectRetryDelay,
+		ReconnectBackoffStrategy:      autopaho.NewConstantBackoffStrategy(cfg.connectRetryDelay),
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, connAck *paho.Connack) {
 			fmt.Println("mqtt connection up")
 			if _, err := cm.Subscribe(context.Background(), &paho.Subscribe{
