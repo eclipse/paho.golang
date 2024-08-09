@@ -30,6 +30,13 @@ func TestConstantBackoffNoDelay(t *testing.T) {
 
 	for i := 0; i < 100; i++ {
 		actual := noDelay(i)
+		if i == 0 {
+			if actual != 0 {
+				t.Fatalf("First attempt should not have any delay")
+			} else {
+				continue
+			}
+		}
 		if actual != expected {
 			t.Fatalf("expected value: `%s`, actual `%s`", expected, actual)
 		}
@@ -45,6 +52,13 @@ func TestConstantBackoffRandomValue(t *testing.T) {
 
 		for i := 0; i < 100; i++ {
 			actual := nonZeroDelay(i)
+			if i == 0 {
+				if actual != 0 {
+					t.Fatalf("First attempt should not have any delay")
+				} else {
+					continue
+				}
+			}
 			if actual != expected {
 				t.Fatalf("expected value: `%s`, actual `%s`", expected, actual)
 			}
@@ -103,6 +117,13 @@ func doSetupAndTestRandomExponentialBackoff(t *testing.T) {
 	// create many backoffs and test they are within constraints
 	for i := 0; i < 50; i++ {
 		actual := exponentialBackoff(i)
+		if i == 0 {
+			if actual != 0 {
+				t.Fatalf("First attempt should not have any delay")
+			} else {
+				continue
+			}
+		}
 		if i == 0 && initialMaxDelay < actual {
 			t.Fatalf("Actual backoff value: `%s` was higher than configured initial maximum: `%s`", actual, initialMaxDelay)
 		}

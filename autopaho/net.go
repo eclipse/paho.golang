@@ -46,6 +46,12 @@ func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConne
 
 	var attempt int = 0
 	for {
+		// Delay before attempting connection
+		select {
+		case <-time.After(cfg.ReconnectBackoff(attempt)):
+		case <-ctx.Done():
+			return nil, nil
+		}
 		for _, u := range cfg.ServerUrls {
 			connectionCtx, cancelConnCtx := context.WithTimeout(ctx, cfg.ConnectTimeout)
 
@@ -105,12 +111,6 @@ func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConne
 			}
 		}
 
-		// Delay before attempting another connection
-		select {
-		case <-time.After(cfg.ReconnectBackoff(attempt)):
-		case <-ctx.Done():
-			return nil, nil
-		}
 		attempt++
 	}
 }

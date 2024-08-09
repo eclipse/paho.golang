@@ -21,15 +21,19 @@ import (
 )
 
 // Backoff function to compute backoff duration for the Nth attempt
+// attempt starts at "0" indicating the delay BEFORE the first attempt
 type Backoff func(attempt int) time.Duration
 
 ////////////////////////////////////////////////////////////////////////////////
 // implementation for constant backoff
 ////////////////////////////////////////////////////////////////////////////////
 
-// Creates a new backoff with constant delay (regardless of the attempt).
+// Creates a new backoff with constant delay (for attempt > 0, otherwise the backoff is 0).
 func NewConstantBackoff(delay time.Duration) Backoff {
 	return func(attempt int) time.Duration {
+		if attempt <= 0 {
+			return 0
+		}
 		return delay
 	}
 }
@@ -82,7 +86,8 @@ func NewExponentialBackoff(
 		// will be multiplied by "factor" up to the max value for each attempt
 		movingMaxMillis := initialMaxDelayMillis
 
-		for i := 0; i < attempt; i++ {
+		// computaion is based on 1 as 0 is the backoff for the first attempt
+		for i := 1; i < attempt; i++ {
 			movingMaxMillis = int64(float32(movingMaxMillis) * factor)
 			// ensure we stay in range
 			// check for range overflow / numerical overflow
@@ -97,6 +102,10 @@ func NewExponentialBackoff(
 	}
 
 	return func(attempt int) time.Duration {
+		if attempt <= 0 {
+			return 0
+		}
+
 		maxDelayForAttemptMillis := computeMaxDelayForAttempt(attempt)
 		randomMillisInRange := randRange(minDelayMillis, maxDelayForAttemptMillis)
 

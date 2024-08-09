@@ -31,9 +31,14 @@ func main() {
 	minBackoff := int64(math.MaxInt64)
 	maxBackoff := int64(0)
 	iterationsTotal := 0
+
+	zeroAttmeptBackoffTime := backoff(0).Milliseconds()
+	fmt.Printf("Backoff for attempt '0'       : %d\n", zeroAttmeptBackoffTime)
+
 	for i := 0; i < 22; i++ {
 		iterations := interationBase << i
 		for j := 0; j < iterations; j++ {
+			iterationsTotal++
 			backoffTime := backoff(iterationsTotal).Milliseconds()
 			if backoffTime < minBackoff {
 				minBackoff = backoffTime
@@ -41,7 +46,6 @@ func main() {
 			if backoffTime > maxBackoff {
 				maxBackoff = backoffTime
 			}
-			iterationsTotal++
 		}
 
 		fmt.Printf("After % 8d iterations, min: %d, max: % 7d\n", iterationsTotal, minBackoff, maxBackoff)
