@@ -833,7 +833,8 @@ const (
 // PublishOptions enables the behaviour of Publish to be modified
 type PublishOptions struct {
 	// Method enables a degree of control over how  PublishWithOptions operates
-	Method PublishMethod
+	Method     PublishMethod
+	OnComplete func(*PublishResponse, error)
 }
 
 // PublishWithOptions is used to send a publication to the MQTT server (with options to customise its behaviour)
@@ -897,15 +898,29 @@ func (c *Client) publishQoS12(ctx context.Context, pb *packets.Publish, o Publis
 	if _, err := pb.WriteTo(c.config.Conn); err != nil {
 		c.debug.Printf("failed to write packet %d to connection: %s", pb.PacketID, err)
 		if o.Method == PublishMethod_AsyncSend {
-			return nil, ErrNetworkErrorAfterStored // Async send, so we don't wait for the response (may add callbacks in the future to enable user to obtain status)
+			if o.OnComplete != nil {
+				go o.OnComplete(nil, fmt.Errorf("failed to write packet to connection: %w", err))
+			}
+			return nil, ErrNetworkErrorAfterStored
 		}
+		return nil, fmt.Errorf("failed to write packet to connection: %w", err)
 	}
 	c.config.PingHandler.PacketSent()
 
 	if o.Method == PublishMethod_AsyncSend {
-		return nil, nil // Async send, so we don't wait for the response (may add callbacks in the future to enable user to obtain status)
+		if o.OnComplete != nil {
+			go func() {
+				pubResp, err := c.waitForResponse(pubCtx, pb, ret)
+				o.OnComplete(pubResp, err)
+			}()
+		}
+		return nil, nil
 	}
 
+	return c.waitForResponse(pubCtx, pb, ret)
+}
+
+func (c *Client) waitForResponse(pubCtx context.Context, pb *packets.Publish, ret chan packets.ControlPacket) (*PublishResponse, error) {
 	var resp packets.ControlPacket
 	select {
 	case <-pubCtx.Done():
