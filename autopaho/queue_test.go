@@ -105,11 +105,11 @@ func TestQueuedMessages(t *testing.T) {
 
 	connectCount := 0
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: 500 * time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,             // Connection should come up very quickly
-		Queue:             q,
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        60,
+		ReconnectBackoff: NewConstantBackoff(500 * time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                                 // Connection should come up very quickly
+		Queue:            q,
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			if !allowConnection.Load() {
 				return nil, fmt.Errorf("some random error")
@@ -315,11 +315,11 @@ func TestPreloadPublish(t *testing.T) {
 	session.SetDebugLogger(paholog.NewTestLogger(t, "sessionDebug:"))
 	defer session.Close()
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         0,
-		ConnectRetryDelay: shortDelay, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay, // Connection should come up very quickly
-		Queue:             q,
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        0,
+		ReconnectBackoff: NewConstantBackoff(shortDelay), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                     // Connection should come up very quickly
+		Queue:            q,
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			var conn net.Conn
 			var err error

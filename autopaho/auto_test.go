@@ -74,10 +74,10 @@ func TestDisconnect(t *testing.T) {
 
 	errCh := make(chan error, 2)
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        60,
+		ReconnectBackoff: NewConstantBackoff(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                           // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			ctx, cancel := context.WithCancel(ctx)
 			conn, done, err := ts.Connect(ctx)
@@ -186,10 +186,10 @@ func TestReconnect(t *testing.T) {
 	pinger.SetDebug(paholog.NewTestLogger(t, "pinger:"))
 
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        60,
+		ReconnectBackoff: NewConstantBackoff(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                           // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			atCount += 1
 			if atCount == 2 { // fail on the initial reconnection attempt to exercise retry functionality
@@ -299,10 +299,10 @@ func TestBasicPubSub(t *testing.T) {
 	atCount := 0
 
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        60,
+		ReconnectBackoff: NewConstantBackoff(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                           // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			atCount += 1
 			if atCount > 1 { // force failure if a reconnection is attempted (the connection should not drop in this test)
@@ -444,10 +444,10 @@ func TestAuthenticate(t *testing.T) {
 	atCount := 0
 
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{server},
-		KeepAlive:         60,
-		ConnectRetryDelay: time.Millisecond, // Retry connection very quickly!
-		ConnectTimeout:    shortDelay,       // Connection should come up very quickly
+		ServerUrls:       []*url.URL{server},
+		KeepAlive:        60,
+		ReconnectBackoff: NewConstantBackoff(time.Millisecond), // Retry connection very quickly!
+		ConnectTimeout:   shortDelay,                           // Connection should come up very quickly
 		AttemptConnection: func(ctx context.Context, _ ClientConfig, _ *url.URL) (net.Conn, error) {
 			atCount += 1
 			if atCount == 2 { // fail on the initial reconnection attempt to exercise retry functionality
@@ -542,7 +542,7 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	config := ClientConfig{
 		ServerUrls:                    []*url.URL{server},
 		KeepAlive:                     5,
-		ConnectRetryDelay:             5 * time.Second,
+		ReconnectBackoff:              NewConstantBackoff(5 * time.Second),
 		ConnectTimeout:                5 * time.Second,
 		CleanStartOnInitialConnection: true, // Should set Clean Start flag on first connection attempt
 		// extends the lower-level paho.ClientConfig
@@ -627,9 +627,9 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 func ExampleClientConfig_ConnectPacketBuilder() {
 	serverURL, _ := url.Parse("mqtt://mqtt_user:mqtt_pass@127.0.0.1:1883")
 	config := ClientConfig{
-		ServerUrls:        []*url.URL{serverURL},
-		ConnectRetryDelay: 5 * time.Second,
-		ConnectTimeout:    5 * time.Second,
+		ServerUrls:       []*url.URL{serverURL},
+		ReconnectBackoff: NewConstantBackoff(5 * time.Second),
+		ConnectTimeout:   5 * time.Second,
 		ClientConfig: paho.ClientConfig{
 			ClientID: "test",
 		},

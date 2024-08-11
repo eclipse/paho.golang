@@ -141,11 +141,11 @@ func main() {
 	}
 
 	genericCfg := autopaho.ClientConfig{
-		ServerUrls:        []*url.URL{serverUrl},
-		KeepAlive:         30,
-		ConnectRetryDelay: 2 * time.Second,
-		ConnectTimeout:    5 * time.Second,
-		OnConnectError:    func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
+		ServerUrls:       []*url.URL{serverUrl},
+		KeepAlive:        30,
+		ReconnectBackoff: autopaho.NewConstantBackoff(2 * time.Second),
+		ConnectTimeout:   5 * time.Second,
+		OnConnectError:   func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		ClientConfig: paho.ClientConfig{
 			OnClientError: func(err error) { fmt.Printf("requested disconnect: %s\n", err) },
 			OnServerDisconnect: func(d *paho.Disconnect) {

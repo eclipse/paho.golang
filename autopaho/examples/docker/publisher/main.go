@@ -60,7 +60,7 @@ func main() {
 		KeepAlive:                     cfg.keepAlive,
 		CleanStartOnInitialConnection: false, // the default
 		SessionExpiryInterval:         60,    // Session remains live 60 seconds after disconnect
-		ConnectRetryDelay:             cfg.connectRetryDelay,
+		ReconnectBackoff:              autopaho.NewConstantBackoff(cfg.connectRetryDelay),
 		OnConnectionUp:                func(*autopaho.ConnectionManager, *paho.Connack) { fmt.Println("mqtt connection up") },
 		OnConnectError:                func(err error) { fmt.Printf("error whilst attempting connection: %s\n", err) },
 		Debug:                         log.NOOPLogger{},
