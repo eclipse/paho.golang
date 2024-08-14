@@ -680,7 +680,6 @@ func (c *ConnectionManager) handleAsyncCompletion(ctx context.Context, asyncComp
 	}
 }
 
-// write function to call onComplete and remove it from the callback map
 func (c *ConnectionManager) executeCallbackAndRemove(packetID uint16, resp *paho.PublishResponse, err error) {
 	c.callbackMu.Lock()
 	onComplete, ok := c.callbackMap[packetID]
