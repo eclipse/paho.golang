@@ -22,6 +22,7 @@ import (
 	"sync"
 
 	"github.com/eclipse/paho.golang/autopaho/queue"
+	"github.com/google/uuid"
 )
 
 // A queue implementation that stores all data in RAM
@@ -32,6 +33,7 @@ type Queue struct {
 	messages        [][]byte
 	waiting         []chan<- struct{} // closed when something arrives in the queue
 	waitingForEmpty []chan<- struct{} // closed when queue is empty
+	uniqueIDs       []uuid.UUID
 }
 
 // New creates a new memory-based queue
@@ -68,20 +70,21 @@ func (q *Queue) WaitForEmpty() chan struct{} {
 }
 
 // Enqueue add item to the queue.
-func (q *Queue) Enqueue(p io.Reader) error {
+func (q *Queue) Enqueue(p io.Reader) (uuid.UUID, error) {
 	var b bytes.Buffer
 	_, err := b.ReadFrom(p)
 	if err != nil {
-		return fmt.Errorf("Queue.Push failed to read into buffer: %w", err)
+		return uuid.Nil, fmt.Errorf("Queue.Push failed to read into buffer: %w", err)
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.messages = append(q.messages, b.Bytes())
+	q.uniqueIDs = append(q.uniqueIDs, uuid.New())
 	for _, c := range q.waiting {
 		close(c)
 	}
 	q.waiting = q.waiting[:0]
-	return nil
+	return q.uniqueIDs[len(q.uniqueIDs)-1], nil
 }
 
 // Peek retrieves the oldest item from the queue (without removing it)
@@ -97,13 +100,13 @@ func (q *Queue) Peek() (queue.Entry, error) {
 
 // Reader implements Entry.Reader - As the entry will always be the first item in the queue this is implemented
 // against Queue rather than as a separate struct.
-func (q *Queue) Reader() (io.Reader, error) {
+func (q *Queue) Reader() (uuid.UUID, io.Reader, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if len(q.messages) == 0 {
-		return nil, queue.ErrEmpty
+		return uuid.Nil, nil, queue.ErrEmpty
 	}
-	return bytes.NewReader(q.messages[0]), nil
+	return q.uniqueIDs[0], bytes.NewReader(q.messages[0]), nil
 }
 
 // Leave implements Entry.Leave - the entry (will be returned on subsequent calls to Peek)
@@ -128,6 +131,7 @@ func (q *Queue) remove() error {
 	initialLen := len(q.messages)
 	if initialLen > 0 {
 		q.messages = q.messages[1:]
+		q.uniqueIDs = q.uniqueIDs[1:]
 	}
 	if initialLen <= 1 { // Queue is now, or was already, empty
 		for _, c := range q.waitingForEmpty {
