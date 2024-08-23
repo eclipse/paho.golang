@@ -30,7 +30,7 @@ var (
 // Users must call one of Leave, Remove, or Quarantine when done with the entry (and before calling Peek again)
 // `Reader()` must not be called after calling Leave, Remove, or Quarantine (and any Reader previously requestes should be considered invalid)
 type Entry interface {
-	Reader() (uuid.UUID, io.Reader, error) // Provides access to the file contents, subsequent calls may return the same reader
+	Reader() (uuid.UUID, io.Reader, error) // Provides access to the id, file contents, subsequent calls may return the same reader
 	Leave() error                          // Leave the entry in the queue (same entry will be returned on subsequent calls to Peek).
 	Remove() error                         // Remove this entry from the queue. Returns queue.ErrEmpty if queue is empty after operation
 	Quarantine() error                     // Flag that this entry has an error (remove from queue, potentially retaining data with error flagged)
@@ -42,7 +42,7 @@ type Queue interface {
 	// queue is empty at the time of the call)
 	Wait() chan struct{}
 
-	// Enqueue add item to the queue.
+	// Enqueue add item to the queue, returns the id of the entry
 	Enqueue(p io.Reader) (uuid.UUID, error)
 
 	// Peek retrieves the oldest item from the queue without removing it

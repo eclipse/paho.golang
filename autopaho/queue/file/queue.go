@@ -169,7 +169,7 @@ func (q *Queue) Peek() (queue.Entry, error) {
 // put writes out an item to disk
 func (q *Queue) put(p io.Reader) (uuid.UUID, error) {
 	id := uuid.New()
-	// Use CreateTemp to generate a file with a unique name (it will be removed when packet has been transmitted)
+	// Create a file with a unique name, it will be removed when packet has been transmitted
 	f, err := os.Create(filepath.Join(q.path, q.prefix+id.String()+q.extension))
 	if err != nil {
 		return uuid.Nil, err
@@ -254,7 +254,7 @@ type entry struct {
 	uuid uuid.UUID
 }
 
-// Reader provides access to the file contents
+// Reader provides access to the id and file contents
 func (e entry) Reader() (uuid.UUID, io.Reader, error) {
 	return e.uuid, e.f, nil
 }
