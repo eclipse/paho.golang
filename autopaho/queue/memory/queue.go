@@ -27,13 +27,18 @@ import (
 
 // A queue implementation that stores all data in RAM
 
+// queueItem represents a single item in the queue
+type queueItem struct {
+	message  []byte
+	uniqueID uuid.UUID
+}
+
 // Queue - basic memory based queue
 type Queue struct {
 	mu              sync.Mutex
-	messages        [][]byte
+	items           []queueItem
 	waiting         []chan<- struct{} // closed when something arrives in the queue
 	waitingForEmpty []chan<- struct{} // closed when queue is empty
-	uniqueIDs       []uuid.UUID
 }
 
 // New creates a new memory-based queue
@@ -45,7 +50,7 @@ func New() *Queue {
 func (q *Queue) Wait() chan struct{} {
 	c := make(chan struct{})
 	q.mu.Lock()
-	if len(q.messages) > 0 {
+	if len(q.items) > 0 {
 		q.mu.Unlock()
 		close(c)
 		return c
@@ -59,7 +64,7 @@ func (q *Queue) Wait() chan struct{} {
 func (q *Queue) WaitForEmpty() chan struct{} {
 	c := make(chan struct{})
 	q.mu.Lock()
-	if len(q.messages) == 0 {
+	if len(q.items) == 0 {
 		q.mu.Unlock()
 		close(c)
 		return c
@@ -78,23 +83,26 @@ func (q *Queue) Enqueue(p io.Reader) (uuid.UUID, error) {
 	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.messages = append(q.messages, b.Bytes())
-	q.uniqueIDs = append(q.uniqueIDs, uuid.New())
+	newItem := queueItem{
+		message:  b.Bytes(),
+		uniqueID: uuid.New(),
+	}
+	q.items = append(q.items, newItem)
 	for _, c := range q.waiting {
 		close(c)
 	}
 	q.waiting = q.waiting[:0]
-	return q.uniqueIDs[len(q.uniqueIDs)-1], nil
+	return newItem.uniqueID, nil
 }
 
 // Peek retrieves the oldest item from the queue (without removing it)
 func (q *Queue) Peek() (queue.Entry, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if len(q.messages) == 0 {
+	if len(q.items) == 0 {
 		return nil, queue.ErrEmpty
 	}
-	// Queue implements Entry directly (as this always references q.messages[0]
+	// Queue implements Entry directly (as this always references q.items[0]
 	return q, nil
 }
 
@@ -103,10 +111,10 @@ func (q *Queue) Peek() (queue.Entry, error) {
 func (q *Queue) Reader() (uuid.UUID, io.Reader, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	if len(q.messages) == 0 {
+	if len(q.items) == 0 {
 		return uuid.Nil, nil, queue.ErrEmpty
 	}
-	return q.uniqueIDs[0], bytes.NewReader(q.messages[0]), nil
+	return q.items[0].uniqueID, bytes.NewReader(q.items[0].message), nil
 }
 
 // Leave implements Entry.Leave - the entry (will be returned on subsequent calls to Peek)
@@ -128,10 +136,9 @@ func (q *Queue) Quarantine() error {
 func (q *Queue) remove() error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	initialLen := len(q.messages)
+	initialLen := len(q.items)
 	if initialLen > 0 {
-		q.messages = q.messages[1:]
-		q.uniqueIDs = q.uniqueIDs[1:]
+		q.items = q.items[1:]
 	}
 	if initialLen <= 1 { // Queue is now, or was already, empty
 		for _, c := range q.waitingForEmpty {
