@@ -87,11 +87,14 @@ func establishServerConnection(ctx context.Context, cfg ClientConfig, firstConne
 					cli.SetErrorLogger(cfg.PahoErrors)
 				}
 
-				cp := cfg.buildConnectPacket(firstConnection, u)
-				connack, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
-				if err == nil {                               // Successfully connected
-					cancelConnCtx()
-					return cli, connack
+				var cp *paho.Connect
+				cp, err = cfg.buildConnectPacket(firstConnection, u)
+				if err == nil {
+					connack, err = cli.Connect(connectionCtx, cp) // will return an error if the connection is unsuccessful (checks the reason code)
+					if err == nil {                               // Successfully connected
+						cancelConnCtx()
+						return cli, connack
+					}
 				}
 			}
 			cancelConnCtx()

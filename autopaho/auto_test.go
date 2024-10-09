@@ -552,7 +552,7 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	}
 
 	// Validate initial state
-	cp := config.buildConnectPacket(true, nil)
+	cp, _ := config.buildConnectPacket(true, nil)
 
 	if !cp.CleanStart {
 		t.Errorf("Expected Clean Start to be true")
@@ -573,7 +573,7 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	config.SetUsernamePassword("testuser", []byte("testpassword"))
 	config.SetWillMessage(fmt.Sprintf("client/%s/state", config.ClientID), []byte("disconnected"), 1, true)
 
-	cp = config.buildConnectPacket(false, nil)
+	cp, _ = config.buildConnectPacket(false, nil)
 	if cp.CleanStart {
 		t.Errorf("Expected Clean Start to be false")
 	}
@@ -609,14 +609,14 @@ func TestClientConfig_buildConnectPacket(t *testing.T) {
 	}
 
 	// Set an override method for the CONNECT packet
-	config.SetConnectPacketConfigurator(func(c *paho.Connect) *paho.Connect {
+	config.SetConnectPacketConfigurator(func(c *paho.Connect) (*paho.Connect, error) {
 		delay := uint32(200)
 		c.WillProperties.WillDelayInterval = &delay
-		return c
+		return c, nil
 	})
 
 	testUrl, _ := url.Parse("mqtt://mqtt_user:mqtt_pass@127.0.0.1:1883")
-	cp = config.buildConnectPacket(false, testUrl)
+	cp, _ = config.buildConnectPacket(false, testUrl)
 
 	if *(cp.WillProperties.WillDelayInterval) != 200 { // verifies the override
 		t.Errorf("Will message Delay Interval did not match expected [200]: found [%v]", *(cp.Properties.WillDelayInterval))
@@ -634,15 +634,15 @@ func ExampleClientConfig_ConnectPacketBuilder() {
 			ClientID: "test",
 		},
 	}
-	config.ConnectPacketBuilder = func(c *paho.Connect, u *url.URL) *paho.Connect {
+	config.ConnectPacketBuilder = func(c *paho.Connect, u *url.URL) (*paho.Connect, error) {
 		// Extracting password from URL
 		c.Username = u.User.Username()
 		// up to user to catch empty password passed via URL
 		p, _ := u.User.Password()
 		c.Password = []byte(p)
-		return c
+		return c, nil
 	}
-	cp := config.buildConnectPacket(false, serverURL)
+	cp, _ := config.buildConnectPacket(false, serverURL)
 	fmt.Printf("user: %s, pass: %s", cp.Username, string(cp.Password))
 	// Output: user: mqtt_user, pass: mqtt_pass
 }
