@@ -71,6 +71,7 @@ func TestTAHandler_PublishHook(t *testing.T) {
 				Topic: "test",
 			},
 			expected: &paho.Publish{
+				Topic: "test",
 				Properties: &paho.PublishProperties{
 					TopicAlias: paho.Uint16(1),
 				},
@@ -86,6 +87,7 @@ func TestTAHandler_PublishHook(t *testing.T) {
 				Properties: &paho.PublishProperties{},
 			},
 			expected: &paho.Publish{
+				Topic: "test",
 				Properties: &paho.PublishProperties{
 					TopicAlias: paho.Uint16(1),
 				},
