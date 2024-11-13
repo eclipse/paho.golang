@@ -107,7 +107,6 @@ func (t *TAHandler) PublishHook(p *paho.Publish) {
 			p.Properties = &paho.PublishProperties{}
 		}
 		p.Properties.TopicAlias = paho.Uint16(a)
-		p.Topic = ""
 		return
 	}
 }
