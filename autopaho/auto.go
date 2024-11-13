@@ -87,7 +87,7 @@ type ClientConfig struct {
 	// To fix, use packets.NewThreadSafeConn wrapper or extend the custom net.Conn struct with sync.Locker.
 	AttemptConnection func(context.Context, ClientConfig, *url.URL) (net.Conn, error)
 
-	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called (within a goroutine) when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions.
+	OnConnectionUp func(*ConnectionManager, *paho.Connack) // Called when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions. Supplied function must not block.
 	OnConnectError func(error)                             // Called (within a goroutine) whenever a connection attempt fails. Will wrap autopaho.ConnackError on server deny.
 
 	Debug      log.Logger // By default set to NOOPLogger{},set to a logger for debugging info

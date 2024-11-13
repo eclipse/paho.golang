@@ -31,13 +31,6 @@ import (
 	"github.com/eclipse/paho.golang/paho/session/state"
 )
 
-type MQTTVersion byte
-
-const (
-	MQTTv311 MQTTVersion = 4
-	MQTTv5   MQTTVersion = 5
-)
-
 const defaultSendAckInterval = 50 * time.Millisecond
 
 var (
@@ -91,7 +84,8 @@ type (
 		PacketTimeout time.Duration
 		// OnServerDisconnect is called only when a packets.DISCONNECT is received from server
 		OnServerDisconnect func(*Disconnect)
-		// OnClientError is for example called on net.Error
+		// OnClientError is for example called on net.Error. Note that this may be called multiple times and may be
+		// called following a successful `Disconnect`. See autopaho.errorHandler for an example.
 		OnClientError func(error)
 		// PublishHook allows a user provided function to be called before
 		// a Publish packet is sent allowing it to inspect or modify the
