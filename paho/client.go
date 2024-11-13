@@ -31,13 +31,6 @@ import (
 	"github.com/eclipse/paho.golang/paho/session/state"
 )
 
-type MQTTVersion byte
-
-const (
-	MQTTv311 MQTTVersion = 4
-	MQTTv5   MQTTVersion = 5
-)
-
 const defaultSendAckInterval = 50 * time.Millisecond
 
 var (
