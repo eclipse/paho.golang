@@ -79,6 +79,16 @@ func (t *TAHandler) ResetAlias(topic string, a uint16) {
 	t.aliases[a] = topic
 }
 
+// ResetAll resets all alias value.
+// Since topic aliases are not carried over upon reconnection,
+// ResetAll should be called during connection
+func (t *TAHandler) ResetAll() {
+	t.Lock()
+	defer t.Unlock()
+
+	clear(t.aliases)
+}
+
 // PublishHook is designed to be given to an MQTT client and will be executed
 // before a publish is sent allowing it to modify the Properties of the packet.
 // In this case it allows the Topic Alias Handler to automatically replace topic
