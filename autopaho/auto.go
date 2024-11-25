@@ -88,7 +88,7 @@ type ClientConfig struct {
 	AttemptConnection func(context.Context, ClientConfig, *url.URL) (net.Conn, error)
 
 	OnConnectionUp   func(*ConnectionManager, *paho.Connack) // Called when a connection is made (including reconnection). Connection Manager passed to simplify subscriptions. Supplied function must not block.
-	OnConnectionDown func() bool                             // Only called after the connection that resulted in OnConnectionUp is dropped. Returning false will casue autopaho to cease attempting to connect. Supplied function must not block.
+	OnConnectionDown func() bool                             // Only called after the connection that resulted in OnConnectionUp is dropped. Returning false will cause autopaho to cease attempting to connect. Supplied function must not block.
 	OnConnectError   func(error)                             // Called (within a goroutine) whenever a connection attempt fails. Will wrap autopaho.ConnackError on server deny.
 
 	Debug      log.Logger // By default set to NOOPLogger{},set to a logger for debugging info
