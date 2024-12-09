@@ -121,7 +121,7 @@ func (r *StandardRouter) Route(pb *packets.Publish) {
 
 	handlerCalled := false
 	for route, handlers := range r.subscriptions {
-		if match(route, topic) {
+		if route == topic || match(route, topic) { 
 			r.debug.Println("found handler for:", route)
 			for _, handler := range handlers {
 				handler(m)
@@ -151,30 +151,54 @@ func (r *StandardRouter) DefaultHandler(h MessageHandler) {
 }
 
 func match(route, topic string) bool {
-	return route == topic || routeIncludesTopic(route, topic)
-}
-
-func matchDeep(route []string, topic []string) bool {
-	if len(route) == 0 {
-		return len(topic) == 0
+	s1 := strings.Split(route, "/")
+	s2 := strings.Split(topic, "/")
+	s1p := 0
+	s2p := 0
+	for s1p < len(s1) {
+		if s2p < len(s2) && s1[s1p] != "#" {
+			if s1[s1p] == s2[s2p] || s1[s1p] == "+" {
+				s1p++
+				s2p++
+				continue
+			} else {
+				return false
+			}
+		} else if s1[s1p] != "#" && s2p >= len(s2) {
+			return false
+		}
+		nPlusSign := 0
+	NoWildcard:
+		for s1p++; s1p < len(s1); s1p++ {
+			switch s1[s1p] {
+			case "#":
+				continue
+			case "+":
+				nPlusSign++
+				continue
+			default:
+				break NoWildcard
+			}
+		}
+		s2p = s2p + nPlusSign
+		if s2p > len(s2) {
+			return false
+		}
+		if s1p >= len(s1) {
+			return true
+		}
+		for ; s2p < len(s2); s2p++ {
+			if s1[s1p] == s2[s2p] {
+				s1p++
+				s2p++
+				break
+			}
+		}
 	}
-
-	if len(topic) == 0 {
-		return route[0] == "#"
+	if s2p != len(s2) {
+		return false
 	}
-
-	if route[0] == "#" {
-		return true
-	}
-
-	if (route[0] == "+") || (route[0] == topic[0]) {
-		return matchDeep(route[1:], topic[1:])
-	}
-	return false
-}
-
-func routeIncludesTopic(route, topic string) bool {
-	return matchDeep(routeSplit(route), topicSplit(topic))
+	return true
 }
 
 func routeSplit(route string) []string {
